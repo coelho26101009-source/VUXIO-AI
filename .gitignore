@@ -1,0 +1,74 @@
+# ═══════════════════════════════════════════════════════════
+#  VIMO AI — .gitignore
+#  NUNCA enviar para o GitHub os ficheiros abaixo!
+# ═══════════════════════════════════════════════════════════
+
+# ──────────────────────────────────────────────────────────
+#  🔐 SEGURANÇA — Variáveis de ambiente e chaves secretas
+# ──────────────────────────────────────────────────────────
+.env
+.env.local
+.env.development
+.env.development.local
+.env.test
+.env.test.local
+.env.production
+.env.production.local
+*.env
+
+# Ficheiros de configuração com chaves (Firebase, etc.)
+firebase-config.js
+firebase-config.ts
+serviceAccountKey.json
+google-services.json
+GoogleService-Info.plist
+
+# ──────────────────────────────────────────────────────────
+#  📦 Dependências (geradas automaticamente via npm install)
+# ──────────────────────────────────────────────────────────
+node_modules
+node_modules/
+
+# ──────────────────────────────────────────────────────────
+#  🏗️ Build outputs (gerados via npm run build)
+# ──────────────────────────────────────────────────────────
+dist
+dist-ssr
+build
+out
+
+# ──────────────────────────────────────────────────────────
+#  📝 Logs
+# ──────────────────────────────────────────────────────────
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ──────────────────────────────────────────────────────────
+#  💻 Editores e IDEs
+# ──────────────────────────────────────────────────────────
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ──────────────────────────────────────────────────────────
+#  🍎 Sistema operativo
+# ──────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ──────────────────────────────────────────────────────────
+#  ⚡ Vite / TypeScript
+# ──────────────────────────────────────────────────────────
+*.local
+tsconfig.tsbuildinfo

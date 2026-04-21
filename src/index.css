@@ -1,0 +1,57 @@
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* { box-sizing: border-box; }
+
+body {
+  background: #0e0e18;
+  color: #ececec;
+  margin: 0;
+  font-family: 'Sora', sans-serif;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(245, 158, 11, 0.15); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(245, 158, 11, 0.3); }
+
+/* Helios animations */
+@keyframes helios-rotate-cw {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+@keyframes helios-rotate-ccw {
+  from { transform: rotate(360deg); }
+  to   { transform: rotate(0deg); }
+}
+@keyframes helios-nucleus-pulse {
+  0%, 100% { transform: scale(1); }
+  50%       { transform: scale(1.06); }
+}
+@keyframes helios-star-tw {
+  0%, 100% { opacity: 0.65; transform: translate(-50%, -50%) scale(1); }
+  50%       { opacity: 1;    transform: translate(-50%, -50%) scale(1.5); }
+}
+
+/* Fade in for messages */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-up { animation: fade-up 0.25s ease; }
+
+/* Selection */
+::selection { background: rgba(245, 158, 11, 0.2); color: #fef3c7; }
+
+/* Placeholder */
+textarea::placeholder, input::placeholder { color: rgba(255, 255, 255, 0.2) !important; }
+
+/* Monospace */
+code, kbd, pre, .font-mono { font-family: 'JetBrains Mono', monospace; }
