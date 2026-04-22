@@ -1,5 +1,6 @@
 import React from 'react';
-import { Cpu, LogIn, UserCircle2 } from 'lucide-react';
+import { LogIn, UserCircle2 } from 'lucide-react';
+import { VimoAvatar } from './VimoAvatar';
 
 interface LoginScreenProps {
   onLogin: () => void;
@@ -8,22 +9,37 @@ interface LoginScreenProps {
 
 export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onGuest }) => {
   return (
-    <div className="flex flex-col items-center justify-center h-screen w-full bg-[#0e0e18] relative overflow-hidden">
-      {/* Background gradient */}
-      <div className="absolute inset-0 bg-gradient-to-b from-[#12131f] via-[#0e0e18] to-[#0e0e18] pointer-events-none" />
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-amber-600/5 rounded-full blur-[100px] pointer-events-none" />
+    <div
+      className="flex flex-col items-center justify-center h-screen w-full relative overflow-hidden"
+      style={{ background: 'linear-gradient(160deg, #130d2e 0%, #0b0b1a 50%, #0e0b1f 100%)' }}
+    >
+      {/* Background glow */}
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 pointer-events-none"
+        style={{ width: 600, height: 400, background: 'radial-gradient(ellipse, rgba(124,58,237,0.12) 0%, transparent 70%)', filter: 'blur(40px)' }} />
+      <div className="absolute bottom-0 right-0 pointer-events-none"
+        style={{ width: 400, height: 300, background: 'radial-gradient(ellipse, rgba(236,72,153,0.06) 0%, transparent 70%)', filter: 'blur(60px)' }} />
 
       <div className="relative z-10 flex flex-col items-center w-full max-w-sm px-6">
-        {/* Icon */}
-        <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(245,158,11,0.1)]">
-          <Cpu size={28} className="text-amber-500" />
+        {/* Avatar */}
+        <div className="mb-6">
+          <VimoAvatar size={72} isConnected={true} isSpeaking={false} />
         </div>
 
         {/* Title */}
-        <h1 className="text-3xl font-black tracking-widest text-amber-500 font-['Sora'] mb-1 drop-shadow-[0_0_20px_rgba(245,158,11,0.3)]">
+        <h1
+          className="text-4xl font-black tracking-widest mb-1"
+          style={{
+            background: 'linear-gradient(135deg, #a855f7, #818cf8, #ec4899)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            backgroundClip: 'text',
+            filter: 'drop-shadow(0 0 24px rgba(168,85,247,0.4))',
+          }}
+        >
           VimoMind AI
         </h1>
-        <p className="text-xs text-amber-600/50 uppercase tracking-[0.35em] mb-10 text-center">
+        <p className="text-xs uppercase tracking-[0.35em] mb-10"
+          style={{ color: 'rgba(168,85,247,0.45)' }}>
           Inteligência Artificial Avançada
         </p>
 
@@ -31,28 +47,41 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onGuest }) =>
         <div className="w-full flex flex-col gap-3">
           <button
             onClick={onLogin}
-            className="w-full flex items-center justify-center gap-3 py-3.5 px-6 rounded-xl bg-amber-500/10 hover:bg-amber-500/18 border border-amber-500/25 hover:border-amber-500/45 text-amber-400 font-semibold text-sm tracking-wide transition-all duration-200 hover:shadow-[0_0_20px_rgba(245,158,11,0.12)]"
+            className="w-full flex items-center justify-center gap-3 py-3.5 px-6 rounded-2xl font-semibold text-sm text-white transition-all duration-200"
+            style={{
+              background: 'linear-gradient(135deg, #7c3aed, #6366f1)',
+              boxShadow: '0 4px 24px rgba(124,58,237,0.35)',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 6px 32px rgba(124,58,237,0.55)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
+            onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 4px 24px rgba(124,58,237,0.35)'; e.currentTarget.style.transform = 'translateY(0)'; }}
           >
             <LogIn size={16} />
             Entrar com Google
           </button>
 
           <div className="flex items-center gap-3 my-1">
-            <div className="flex-1 h-px bg-white/6" />
-            <span className="text-xs text-white/20">ou</span>
-            <div className="flex-1 h-px bg-white/6" />
+            <div className="flex-1 h-px" style={{ background: 'rgba(255,255,255,0.06)' }} />
+            <span className="text-xs" style={{ color: 'rgba(255,255,255,0.2)' }}>ou</span>
+            <div className="flex-1 h-px" style={{ background: 'rgba(255,255,255,0.06)' }} />
           </div>
 
           <button
             onClick={onGuest}
-            className="w-full flex items-center justify-center gap-3 py-3.5 px-6 rounded-xl bg-white/3 hover:bg-white/6 border border-white/8 hover:border-white/14 text-white/50 hover:text-white/70 font-medium text-sm tracking-wide transition-all duration-200"
+            className="w-full flex items-center justify-center gap-3 py-3.5 px-6 rounded-2xl font-medium text-sm transition-all duration-200"
+            style={{
+              background: 'rgba(255,255,255,0.04)',
+              border: '1px solid rgba(255,255,255,0.08)',
+              color: 'rgba(255,255,255,0.45)',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(124,58,237,0.08)'; e.currentTarget.style.color = 'rgba(255,255,255,0.7)'; e.currentTarget.style.borderColor = 'rgba(139,92,246,0.2)'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; e.currentTarget.style.color = 'rgba(255,255,255,0.45)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'; }}
           >
             <UserCircle2 size={16} />
             Continuar sem conta
           </button>
         </div>
 
-        <p className="text-xs text-white/18 mt-6 text-center leading-relaxed">
+        <p className="text-xs mt-6 text-center leading-relaxed" style={{ color: 'rgba(255,255,255,0.15)' }}>
           Sem conta, o histórico de conversas não é guardado.
         </p>
       </div>
