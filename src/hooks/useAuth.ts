@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { User, signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
+import type { User } from 'firebase/auth';
+import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 import { auth, googleProvider } from '../firebase';
 
 export type AuthMode = 'loading' | 'guest' | 'user';

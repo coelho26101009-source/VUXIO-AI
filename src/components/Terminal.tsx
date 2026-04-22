@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { Copy, Check, Terminal as TerminalIcon } from 'lucide-react';
-import { LogMessage } from '../types';
+import type { LogMessage } from '../types';
 
 interface TerminalProps {
   logs: LogMessage[];
@@ -17,11 +17,10 @@ const CopyButton: React.FC<{ text: string }> = ({ text }) => {
     setTimeout(() => setCopied(false), 2000);
   };
   return (
-    <button
-      onClick={handleCopy}
-      className="flex items-center gap-1.5 text-xs px-2 py-1 rounded-md bg-white/10 hover:bg-white/20 text-white/60 hover:text-white transition-all"
-    >
-      {copied ? <><Check size={12} className="text-green-400" /><span className="text-green-400">Copiado</span></> : <><Copy size={12} /><span>Copiar</span></>}
+    <button onClick={handleCopy} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded-md bg-white/10 hover:bg-white/20 text-white/60 hover:text-white transition-all">
+      {copied
+        ? <><Check size={12} className="text-green-400" /><span className="text-green-400">Copiado</span></>
+        : <><Copy size={12} /><span>Copiar</span></>}
     </button>
   );
 };
@@ -56,7 +55,6 @@ export const Terminal: React.FC<TerminalProps> = ({ logs }) => {
 
   return (
     <div className="w-full h-full flex flex-col bg-[#0f111a] font-mono text-sm">
-      {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 bg-[#1a1d2e] border-b border-white/5 shrink-0">
         <div className="flex items-center gap-2 text-amber-500/70">
           <TerminalIcon size={14} />
@@ -69,7 +67,6 @@ export const Terminal: React.FC<TerminalProps> = ({ logs }) => {
         </div>
       </div>
 
-      {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-5 scrollbar-thin scrollbar-thumb-amber-900/20">
         {logs.length === 0 && (
           <div className="h-full flex flex-col items-center justify-center text-white/10 select-none">
@@ -79,17 +76,14 @@ export const Terminal: React.FC<TerminalProps> = ({ logs }) => {
         )}
 
         {logs.map(log => (
-          <div
-            key={log.id}
-            className={`flex gap-3 ${log.source === 'USER' ? 'flex-row-reverse' : ''} animate-in fade-in slide-in-from-bottom-2 duration-300`}
-          >
+          <div key={log.id} className={`flex gap-3 ${log.source === 'USER' ? 'flex-row-reverse' : ''} animate-in fade-in slide-in-from-bottom-2 duration-300`}>
             <div className={`shrink-0 w-7 h-7 rounded-full flex items-center justify-center border text-[9px] font-bold mt-1 ${sourceColor[log.source]}`}>
               {sourceLabel[log.source] === 'Vimo AI' ? 'IA' : sourceLabel[log.source]}
             </div>
 
             <div className={`flex flex-col max-w-[85%] ${log.source === 'USER' ? 'items-end' : 'items-start'}`}>
               <span className="text-[10px] text-white/25 mb-1 px-1">
-                {log.timestamp} {log.source === 'HELIOS' ? '· Vimo AI' : log.source === 'SYSTEM' ? '· Sistema' : ''}
+                {log.timestamp} {log.source === 'HELIOS' ? '· Vimo' : log.source === 'SYSTEM' ? '· Sistema' : ''}
               </span>
               <div className={`relative px-4 py-3 rounded-2xl border backdrop-blur-sm overflow-hidden ${bubbleColor[log.source]} ${log.source === 'USER' ? 'rounded-tr-sm' : 'rounded-tl-sm'}`}>
                 {log.source === 'SYSTEM' ? (
@@ -97,7 +91,8 @@ export const Terminal: React.FC<TerminalProps> = ({ logs }) => {
                 ) : (
                   <ReactMarkdown
                     components={{
-                      code({ node, inline, className, children, ...props }: any) {
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      code({ inline, className, children, ...props }: any) {
                         const match = /language-(\w+)/.exec(className || '');
                         return !inline && match ? (
                           <div className="relative my-3 rounded-lg overflow-hidden border border-white/10 bg-[#0d0d0d]">

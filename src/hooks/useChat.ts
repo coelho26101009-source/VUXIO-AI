@@ -1,11 +1,11 @@
 import { useState, useCallback } from 'react';
-import { User } from 'firebase/auth';
+import type { User } from 'firebase/auth';
 import {
   collection, query, where, orderBy, onSnapshot,
   addDoc, updateDoc, doc, serverTimestamp, getDoc
 } from 'firebase/firestore';
 import { db } from '../firebase';
-import { LogMessage, Chat, Attachment } from '../types';
+import type { LogMessage, Chat, Attachment } from '../types';
 
 const TEXT_MODEL = 'llama-3.3-70b-versatile';
 const VISION_MODEL = 'llama-3.2-11b-vision-preview';
@@ -18,8 +18,7 @@ export const useChat = (user: User | null, onReply: (text: string) => void) => {
   const [isLoading, setIsLoading] = useState(false);
 
   const makeId = () => Math.random().toString(36).substring(2, 9);
-  const makeTimestamp = () =>
-    new Date().toLocaleTimeString('pt-PT', { hour12: false });
+  const makeTimestamp = () => new Date().toLocaleTimeString('pt-PT', { hour12: false });
 
   const addLog = useCallback((source: LogMessage['source'], text: string) => {
     const msg: LogMessage = { id: makeId(), source, text, timestamp: makeTimestamp() };
@@ -27,7 +26,6 @@ export const useChat = (user: User | null, onReply: (text: string) => void) => {
     return msg;
   }, []);
 
-  // Carregar lista de chats (só para utilizadores autenticados)
   const subscribeToChats = useCallback((userId: string) => {
     const q = query(
       collection(db, 'chats'),
@@ -72,21 +70,18 @@ export const useChat = (user: User | null, onReply: (text: string) => void) => {
     setIsLoading(true);
 
     try {
-      // Construir histórico para a API
-      const apiMessages: any[] = [
+      const apiMessages: { role: string; content: unknown }[] = [
         {
           role: 'system',
-          content: `Tu és o Vimo AI, uma Inteligência Artificial avançada e elegante criada pelo Simão. Estás a falar com ${userName}. Responde sempre em Português de Portugal (PT-PT), com um tom profissional mas acessível. Quando apresentares código, usa blocos de código com a linguagem indicada.`,
+          content: `Tu és o Vimo, o assistente inteligente do VimoMind AI, criado pelo Simão. Estás a falar com ${userName}. Responde sempre em Português de Portugal (PT-PT), com um tom profissional mas acessível. Quando apresentares código, usa blocos de código com a linguagem indicada.`,
         },
       ];
 
-      // Histórico anterior (apenas texto)
       logs.forEach(l => {
         if (l.source === 'USER') apiMessages.push({ role: 'user', content: l.text });
         if (l.source === 'HELIOS') apiMessages.push({ role: 'assistant', content: l.text });
       });
 
-      // Nova mensagem
       if (attachment) {
         apiMessages.push({
           role: 'user',
@@ -115,7 +110,7 @@ export const useChat = (user: User | null, onReply: (text: string) => void) => {
       if (!response.ok) throw new Error(`Groq API: ${response.statusText}`);
 
       const data = await response.json();
-      const replyText = data.choices[0]?.message?.content || 'Sem resposta.';
+      const replyText = (data.choices[0]?.message?.content as string) || 'Sem resposta.';
 
       const vimoMsg: LogMessage = {
         id: makeId(),
@@ -128,7 +123,6 @@ export const useChat = (user: User | null, onReply: (text: string) => void) => {
       setLogs(updatedLogs);
       onReply(replyText);
 
-      // Guardar no Firebase (só para utilizadores autenticados)
       if (user) {
         if (!currentChatId) {
           const docRef = await addDoc(collection(db, 'chats'), {
@@ -145,7 +139,7 @@ export const useChat = (user: User | null, onReply: (text: string) => void) => {
           });
         }
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error(e);
       addLog('ERROR', 'Falha na comunicação com o servidor. Tenta novamente.');
     } finally {

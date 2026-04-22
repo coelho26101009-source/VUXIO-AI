@@ -10,7 +10,7 @@ import { Sidebar } from './components/Sidebar';
 import { VimoCore } from './components/VimoCore';
 import { Terminal } from './components/Terminal';
 import { InputBar } from './components/InputBar';
-import { Attachment } from './types';
+import type { Attachment } from './types';
 
 // ── Ecrã de boas-vindas ──────────────────────────────────────
 const WelcomeScreen: React.FC<{
@@ -37,7 +37,7 @@ const WelcomeScreen: React.FC<{
       <div className="text-center">
         <h2 className="text-2xl md:text-3xl font-semibold text-[#ececec] mb-2 tracking-tight">
           Olá, sou o{' '}
-          <span className="text-amber-500 font-bold">Vimo AI</span>
+          <span className="text-amber-500 font-bold">Vimo</span>
         </h2>
         <p className="text-sm text-white/40 font-light">Como posso ajudar-te hoje?</p>
       </div>
@@ -170,7 +170,6 @@ const App: React.FC = () => {
             >
               <Menu size={18} />
             </button>
-            {/* Desktop menu toggle */}
             <button
               onClick={() => setSidebarOpen(o => !o)}
               className="w-8 h-8 rounded-lg hidden lg:flex items-center justify-center text-white/35 hover:text-white/70 hover:bg-white/6 transition-all"
@@ -181,7 +180,7 @@ const App: React.FC = () => {
             {/* Model chip */}
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#1a1a28] border border-amber-500/14 text-xs text-white/45 cursor-default select-none">
               <span className="w-1.5 h-1.5 rounded-full bg-green-400 shadow-[0_0_6px_#4ade80] animate-pulse" />
-              <span className="font-medium tracking-wide">Vimo AI V4.0</span>
+              <span className="font-medium tracking-wide">Vimo V4.0</span>
               <ChevronDown size={11} className="text-white/25" />
             </div>
           </div>
@@ -234,7 +233,6 @@ const App: React.FC = () => {
                 />
               ) : (
                 <div className="max-w-2xl mx-auto px-4 py-6">
-                  {/* Show the VimoCore small above messages */}
                   <div className="flex justify-center mb-6">
                     <VimoCore
                       isActive={isConnected}
@@ -243,7 +241,6 @@ const App: React.FC = () => {
                       size={90}
                     />
                   </div>
-                  {/* Messages */}
                   <div className="space-y-6">
                     {logs.map(log => {
                       if (log.source === 'SYSTEM') {
@@ -266,7 +263,7 @@ const App: React.FC = () => {
                           </div>
                           <div className={`flex flex-col gap-1 max-w-[80%] ${isUser ? 'items-end' : 'items-start'}`}>
                             <span className="text-[10px] text-white/25 font-mono px-1">
-                              {log.timestamp}{!isUser && ' · Vimo AI'}
+                              {log.timestamp}{!isUser && ' · Vimo'}
                             </span>
                             <div className={`px-4 py-3 rounded-2xl text-sm leading-relaxed border ${
                               isUser
@@ -288,7 +285,6 @@ const App: React.FC = () => {
                         </div>
                       );
                     })}
-                    {/* Typing indicator */}
                     {isLoading && (
                       <div className="flex gap-3">
                         <div className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 bg-gradient-to-br from-amber-500 to-orange-600 border border-amber-500/40 text-white">V</div>

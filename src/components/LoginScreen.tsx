@@ -21,7 +21,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onGuest }) =>
 
         {/* Title */}
         <h1 className="text-3xl font-black tracking-widest text-amber-500 font-['Sora'] mb-1 drop-shadow-[0_0_20px_rgba(245,158,11,0.3)]">
-          Vimo AI
+          VimoMind AI
         </h1>
         <p className="text-xs text-amber-600/50 uppercase tracking-[0.35em] mb-10 text-center">
           Inteligência Artificial Avançada
