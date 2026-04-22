@@ -91,7 +91,7 @@ const App: React.FC = () => {
   const [currentDate, setCurrentDate] = useState('--/--');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const { logs, chatList, currentChatId, isLoading, addLog, sendMessage, newChat, loadChat, subscribeToChats } =
+  const { logs, chatList, currentChatId, isLoading, sendMessage, newChat, loadChat, subscribeToChats } =
     useChat(user, speak);
 
   const hasMessages = logs.filter(l => l.source !== 'SYSTEM').length > 0;
