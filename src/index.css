@@ -28,6 +28,15 @@ body {
 /* Placeholder */
 textarea::placeholder, input::placeholder { color: rgba(255,255,255,0.2) !important; }
 
+/* ── Code Mode overrides ─────────────────────────────────────── */
+.code-mode { background: #080f0b; }
+.code-mode ::-webkit-scrollbar-thumb { background: rgba(34,197,94,0.2) !important; }
+.code-mode ::-webkit-scrollbar-thumb:hover { background: rgba(34,197,94,0.4) !important; }
+.code-mode ::selection { background: rgba(34,197,94,0.25); color: #d1fae5; }
+.code-mode textarea::placeholder, .code-mode input::placeholder { color: rgba(74,222,128,0.25) !important; }
+@keyframes cursor-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+.code-cursor { animation: cursor-blink 1s step-end infinite; }
+
 /* Monospace */
 code, kbd, pre, .font-mono { font-family: 'JetBrains Mono', monospace; }
 

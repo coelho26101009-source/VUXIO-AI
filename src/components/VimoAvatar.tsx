@@ -3,14 +3,20 @@ interface VimoAvatarProps {
   size?: number;
   isSpeaking?: boolean;
   isConnected?: boolean;
+  isCodeMode?: boolean;
 }
 
 export const VimoAvatar: React.FC<VimoAvatarProps> = ({
   size = 56,
   isSpeaking = false,
   isConnected = false,
+  isCodeMode = false,
 }) => {
   const innerSize = size - 8;
+
+  const particleColors = isCodeMode
+    ? ['#22c55e', '#4ade80', '#86efac']
+    : ['#e879f9', '#818cf8', '#a78bfa'];
 
   // 18 partículas com posições e animações únicas para "float" orgânico
   const particles = Array.from({ length: 18 }, (_, i) => {
@@ -20,7 +26,7 @@ export const VimoAvatar: React.FC<VimoAvatarProps> = ({
     const x = 20 + r * Math.cos(angle);
     const y = 20 + r * Math.sin(angle);
     const dotR = 0.7 + (i % 2) * 0.7;
-    const color = i % 3 === 0 ? '#e879f9' : i % 3 === 1 ? '#818cf8' : '#a78bfa';
+    const color = particleColors[i % 3];
     // Cada partícula tem a sua própria duração e delay para parecer viva
     const dur = 2.4 + (i * 0.31) % 2.2;
     const delay = -((i * 0.47) % dur); // negativo = começa já a meio
@@ -38,14 +44,16 @@ export const VimoAvatar: React.FC<VimoAvatarProps> = ({
       <div
         className="absolute inset-0 rounded-full"
         style={{
-          background: 'conic-gradient(from 0deg, #7c3aed, #a855f7, #ec4899, #6366f1, #7c3aed)',
+          background: isCodeMode
+            ? 'conic-gradient(from 0deg, #15803d, #22c55e, #4ade80, #16a34a, #15803d)'
+            : 'conic-gradient(from 0deg, #7c3aed, #a855f7, #ec4899, #6366f1, #7c3aed)',
           padding: 1.5,
           borderRadius: '50%',
           animation: isConnected ? 'vimo-spin 5s linear infinite' : 'none',
           opacity: isConnected ? 1 : 0.25,
         }}
       >
-        <div className="w-full h-full rounded-full" style={{ background: '#13132b' }} />
+        <div className="w-full h-full rounded-full" style={{ background: isCodeMode ? '#0a1a0e' : '#13132b' }} />
       </div>
 
       {/* Anel de atividade ao falar (suave, sem ping) */}
@@ -54,7 +62,7 @@ export const VimoAvatar: React.FC<VimoAvatarProps> = ({
           className="absolute rounded-full"
           style={{
             inset: -4,
-            border: '2px solid rgba(168,85,247,0.35)',
+            border: `2px solid ${isCodeMode ? 'rgba(34,197,94,0.35)' : 'rgba(168,85,247,0.35)'}`,
             animation: 'vimo-ring-breathe 1.6s ease-in-out infinite',
           }}
         />
@@ -66,10 +74,14 @@ export const VimoAvatar: React.FC<VimoAvatarProps> = ({
         style={{
           width: innerSize,
           height: innerSize,
-          background: 'radial-gradient(circle at 35% 30%, #9333ea, #4f46e5 55%, #1e1b4b)',
+          background: isCodeMode
+            ? 'radial-gradient(circle at 35% 30%, #16a34a, #065f46 55%, #052e16)'
+            : 'radial-gradient(circle at 35% 30%, #9333ea, #4f46e5 55%, #1e1b4b)',
           boxShadow: isConnected
-            ? `0 0 ${isSpeaking ? 20 : 10}px rgba(168,85,247,${isSpeaking ? 0.5 : 0.3}), inset 0 0 10px rgba(255,255,255,0.06)`
-            : '0 0 4px rgba(168,85,247,0.1)',
+            ? isCodeMode
+              ? `0 0 ${isSpeaking ? 20 : 10}px rgba(34,197,94,${isSpeaking ? 0.5 : 0.3}), inset 0 0 10px rgba(255,255,255,0.06)`
+              : `0 0 ${isSpeaking ? 20 : 10}px rgba(168,85,247,${isSpeaking ? 0.5 : 0.3}), inset 0 0 10px rgba(255,255,255,0.06)`
+            : isCodeMode ? '0 0 4px rgba(34,197,94,0.1)' : '0 0 4px rgba(168,85,247,0.1)',
         }}
       >
         {/* Partículas SVG com float orgânico */}

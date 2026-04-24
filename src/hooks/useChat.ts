@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react';
 import type { User } from 'firebase/auth';
 import {
   collection, query, where, orderBy, onSnapshot,
-  addDoc, updateDoc, doc, serverTimestamp, getDoc, deleteDoc
+  addDoc, updateDoc, doc, serverTimestamp, getDoc, getDocs, deleteDoc,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import type { LogMessage, Chat, Attachment } from '../types';
@@ -10,13 +10,28 @@ import type { LogMessage, Chat, Attachment } from '../types';
 const TEXT_MODEL = 'llama-3.3-70b-versatile';
 const VISION_MODEL = 'llama-3.2-11b-vision-preview';
 const GROQ_API_KEY = (import.meta as any).env.VITE_GROQ_API_KEY;
+// Permite redirecionar para um proxy (recomendado em produção para esconder a API key).
+const GROQ_API_URL =
+  (import.meta as any).env.VITE_GROQ_API_URL ||
+  'https://api.groq.com/openai/v1/chat/completions';
 
-export const useChat = (user: User | null, onReply: (text: string) => void) => {
+// Janela deslizante: número de mensagens enviadas como contexto à API.
+// Mantém memória da conversa sem estourar o limite de tokens da Groq.
+const MAX_HISTORY_MESSAGES = 30;
+
+// Compatibilidade: mensagens antigas guardadas com source='HELIOS' ficam mapeadas para 'VIMO'.
+const normalizeMessage = (m: any): LogMessage => ({
+  ...m,
+  source: m.source === 'HELIOS' ? 'VIMO' : m.source,
+});
+
+export const useChat = (user: User | null, onReply: (text: string) => void, codeMode = false) => {
   const [logs, setLogs] = useState<LogMessage[]>([]);
   const [chatList, setChatList] = useState<Chat[]>([]);
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);
+  // Chats antigos (formato array no doc) continuam a usar esse formato; novos usam subcoleção.
+  const [isLegacyChat, setIsLegacyChat] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [chatError, setChatError] = useState<string | null>(null);
 
   const makeId = () => Math.random().toString(36).substring(2, 9);
   const makeTimestamp = () => new Date().toLocaleTimeString('pt-PT', { hour12: false });
@@ -33,73 +48,47 @@ export const useChat = (user: User | null, onReply: (text: string) => void) => {
       where('userId', '==', userId),
       orderBy('updatedAt', 'desc')
     );
-    return onSnapshot(
-      q,
-      snapshot => {
-        setChatError(null);
-        setChatList(snapshot.docs.map(d => ({ id: d.id, title: d.data().title })));
-      },
-      (err) => {
-        console.error('Firestore subscribe error:', err);
-        setChatList([]);
-        if ((err as { code?: string })?.code === 'permission-denied') {
-          setChatError('Sem permissões no Firestore para ler as conversas (permission-denied).');
-          addLog('ERROR', 'Sem permissões para carregar conversas. Verifica as regras do Firestore.');
-        } else {
-          setChatError('Erro ao carregar conversas.');
-          addLog('ERROR', 'Erro ao carregar conversas.');
-        }
-      }
-    );
+    return onSnapshot(q, snapshot => {
+      setChatList(snapshot.docs.map(d => ({ id: d.id, title: d.data().title })));
+    });
   }, []);
 
   const loadChat = useCallback(async (id: string) => {
-    try {
-      setChatError(null);
-      setCurrentChatId(id);
-      const chatDoc = await getDoc(doc(db, 'chats', id));
-      if (chatDoc.exists()) {
-        setLogs(chatDoc.data().messages || []);
-        addLog('SYSTEM', 'Histórico carregado.');
-      }
-    } catch (err) {
-      console.error('Erro ao carregar chat:', err);
-      if ((err as { code?: string })?.code === 'permission-denied') {
-        setChatError('Sem permissões no Firestore para carregar esta conversa.');
-        addLog('ERROR', 'Sem permissões para carregar esta conversa (Firestore).');
-      } else {
-        setChatError('Erro ao carregar conversa.');
-        addLog('ERROR', 'Erro ao carregar conversa.');
-      }
+    setCurrentChatId(id);
+    const chatDoc = await getDoc(doc(db, 'chats', id));
+    if (!chatDoc.exists()) return;
+
+    const data = chatDoc.data();
+    let messages: LogMessage[];
+
+    if (Array.isArray(data.messages)) {
+      messages = data.messages.map(normalizeMessage);
+      setIsLegacyChat(true);
+    } else {
+      const msgsSnap = await getDocs(
+        query(collection(db, 'chats', id, 'messages'), orderBy('createdAt', 'asc'))
+      );
+      messages = msgsSnap.docs.map(d => normalizeMessage(d.data()));
+      setIsLegacyChat(false);
     }
+
+    setLogs(messages);
+    addLog('SYSTEM', 'Histórico carregado.');
   }, [addLog]);
 
   const newChat = useCallback(() => {
     setCurrentChatId(null);
+    setIsLegacyChat(false);
     setLogs([]);
   }, []);
 
   const deleteChat = useCallback(async (id: string) => {
-    if (!user) return;
-    try {
-      setChatError(null);
-      await deleteDoc(doc(db, 'chats', id));
-      if (currentChatId === id) {
-        setCurrentChatId(null);
-        setLogs([]);
-      }
-      addLog('SYSTEM', 'Conversa apagada.');
-    } catch (err) {
-      console.error('Erro ao apagar chat:', err);
-      if ((err as { code?: string })?.code === 'permission-denied') {
-        setChatError('Sem permissões no Firestore para apagar conversas.');
-        addLog('ERROR', 'Sem permissões para apagar conversas (Firestore).');
-      } else {
-        setChatError('Erro ao apagar conversa.');
-        addLog('ERROR', 'Erro ao apagar conversa.');
-      }
+    await deleteDoc(doc(db, 'chats', id));
+    if (currentChatId === id) {
+      setCurrentChatId(null);
+      setLogs([]);
     }
-  }, [user, currentChatId, addLog]);
+  }, [currentChatId]);
 
   const sendMessage = useCallback(async (
     text: string,
@@ -120,16 +109,31 @@ export const useChat = (user: User | null, onReply: (text: string) => void) => {
     setIsLoading(true);
 
     try {
+      const systemPrompt = codeMode
+        ? `Tu és o Vimo em modo PROGRAMADOR — assistente técnico especializado em código, criado pelo Simão. Estás a trabalhar com ${userName}. Responde sempre em Português de Portugal (PT-PT).
+
+Regras deste modo:
+- Tom direto e técnico. Zero floreados, zero preâmbulos. Vai direto ao problema.
+- Código sempre completo, compilável e pronto a executar — nunca fragmentado nem com "..." ou placeholders.
+- Indica sempre a linguagem nos blocos (\`\`\`typescript, \`\`\`python, \`\`\`rust, etc.).
+- Comentários apenas onde o "porquê" não é óbvio pelo próprio código. Nunca comentas o "quê".
+- Quando relevante, menciona: trade-offs de abordagem, complexidade temporal/espacial (Big-O), edge cases, side effects ou limitações da solução.
+- Se forem múltiplos ficheiros, usa o nome de cada ficheiro como título antes do bloco.
+- Prefere a abordagem idiomática da linguagem e as boas práticas atuais da comunidade.
+- Se a questão for ambígua, pede esclarecimento antes de assumir. Uma pergunta objetiva vale mais do que código errado.
+- Quando há erros no código do utilizador, aponta-os diretamente com a causa raiz — não apenas o sintoma.
+- Não repitas código que já foi mostrado, a não ser que mude algo relevante.`
+        : `Tu és o Vimo, o assistente inteligente do VimoMind AI, criado pelo Simão. Estás a falar com ${userName}. Responde sempre em Português de Portugal (PT-PT), com um tom amigável, enérgico e próximo — como um amigo que percebe muito de tecnologia. Sê direto, claro e usa um toque de bom humor quando fizer sentido. Quando apresentares código, usa blocos de código com a linguagem indicada. Celebra as conquistas do utilizador e encoraja-o quando encontra dificuldades.`;
+
       const apiMessages: { role: string; content: unknown }[] = [
-        {
-          role: 'system',
-          content: `Tu és o Vimo, o assistente inteligente do VimoMind AI, criado pelo Simão. Estás a falar com ${userName}. Responde sempre em Português de Portugal (PT-PT), com um tom profissional mas acessível. Quando apresentares código, usa blocos de código com a linguagem indicada.`,
-        },
+        { role: 'system', content: systemPrompt },
       ];
 
-      logs.forEach(l => {
+      // Janela deslizante — só envia as últimas N mensagens para preservar contexto sem estourar tokens.
+      const recentLogs = logs.slice(-MAX_HISTORY_MESSAGES);
+      recentLogs.forEach(l => {
         if (l.source === 'USER') apiMessages.push({ role: 'user', content: l.text });
-        if (l.source === 'HELIOS') apiMessages.push({ role: 'assistant', content: l.text });
+        if (l.source === 'VIMO') apiMessages.push({ role: 'assistant', content: l.text });
       });
 
       if (attachment) {
@@ -144,12 +148,13 @@ export const useChat = (user: User | null, onReply: (text: string) => void) => {
         apiMessages.push({ role: 'user', content: text });
       }
 
-      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      // Quando se usa um proxy, a chave fica do lado do servidor — não a enviamos do cliente.
+      if (GROQ_API_KEY) headers.Authorization = `Bearer ${GROQ_API_KEY}`;
+
+      const response = await fetch(GROQ_API_URL, {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${GROQ_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify({
           model: attachment ? VISION_MODEL : TEXT_MODEL,
           messages: apiMessages,
@@ -164,7 +169,7 @@ export const useChat = (user: User | null, onReply: (text: string) => void) => {
 
       const vimoMsg: LogMessage = {
         id: makeId(),
-        source: 'HELIOS',
+        source: 'VIMO',
         text: replyText,
         timestamp: makeTimestamp(),
       };
@@ -175,34 +180,31 @@ export const useChat = (user: User | null, onReply: (text: string) => void) => {
 
       if (user) {
         if (!currentChatId) {
-          try {
-            const docRef = await addDoc(collection(db, 'chats'), {
-              userId: user.uid,
-              title: text.substring(0, 35) || 'Nova Conversa',
-              updatedAt: serverTimestamp(),
-              messages: updatedLogs,
-            });
-            setCurrentChatId(docRef.id);
-          } catch (err) {
-            console.error('Erro ao criar conversa no Firestore:', err);
-            if ((err as { code?: string })?.code === 'permission-denied') {
-              setChatError('Sem permissões no Firestore para criar conversas.');
-              addLog('ERROR', 'Sem permissões para guardar conversas (Firestore).');
-            }
-          }
+          // Chat novo — cria doc + subcoleção 'messages'.
+          const chatRef = await addDoc(collection(db, 'chats'), {
+            userId: user.uid,
+            title: text.substring(0, 35) || 'Nova Conversa',
+            updatedAt: serverTimestamp(),
+          });
+          await Promise.all([
+            addDoc(collection(db, 'chats', chatRef.id, 'messages'), { ...userMsg, createdAt: serverTimestamp() }),
+            addDoc(collection(db, 'chats', chatRef.id, 'messages'), { ...vimoMsg, createdAt: serverTimestamp() }),
+          ]);
+          setCurrentChatId(chatRef.id);
+          setIsLegacyChat(false);
+        } else if (isLegacyChat) {
+          // Mantém compatibilidade com chats antigos que guardam tudo num array.
+          await updateDoc(doc(db, 'chats', currentChatId), {
+            updatedAt: serverTimestamp(),
+            messages: updatedLogs,
+          });
         } else {
-          try {
-            await updateDoc(doc(db, 'chats', currentChatId), {
-              updatedAt: serverTimestamp(),
-              messages: updatedLogs,
-            });
-          } catch (err) {
-            console.error('Erro ao atualizar conversa no Firestore:', err);
-            if ((err as { code?: string })?.code === 'permission-denied') {
-              setChatError('Sem permissões no Firestore para atualizar conversas.');
-              addLog('ERROR', 'Sem permissões para guardar conversas (Firestore).');
-            }
-          }
+          // Append incremental: só escreve as duas mensagens novas, não reescreve tudo.
+          await Promise.all([
+            addDoc(collection(db, 'chats', currentChatId, 'messages'), { ...userMsg, createdAt: serverTimestamp() }),
+            addDoc(collection(db, 'chats', currentChatId, 'messages'), { ...vimoMsg, createdAt: serverTimestamp() }),
+            updateDoc(doc(db, 'chats', currentChatId), { updatedAt: serverTimestamp() }),
+          ]);
         }
       }
     } catch (e: unknown) {
@@ -211,11 +213,10 @@ export const useChat = (user: User | null, onReply: (text: string) => void) => {
     } finally {
       setIsLoading(false);
     }
-  }, [logs, isLoading, currentChatId, user, onReply, addLog]);
+  }, [logs, isLoading, currentChatId, isLegacyChat, user, onReply, addLog]);
 
   return {
     logs, chatList, currentChatId, isLoading,
-    chatError,
     addLog, sendMessage, newChat, loadChat, deleteChat, subscribeToChats,
   };
 };
