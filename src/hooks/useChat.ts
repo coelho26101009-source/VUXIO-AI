@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react';
 import type { User } from 'firebase/auth';
 import {
   collection, query, where, orderBy, onSnapshot,
-  addDoc, updateDoc, doc, serverTimestamp, getDoc
+  addDoc, updateDoc, doc, serverTimestamp, getDoc, getDocs,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import type { LogMessage, Chat, Attachment } from '../types';
@@ -10,11 +10,27 @@ import type { LogMessage, Chat, Attachment } from '../types';
 const TEXT_MODEL = 'llama-3.3-70b-versatile';
 const VISION_MODEL = 'llama-3.2-11b-vision-preview';
 const GROQ_API_KEY = (import.meta as any).env.VITE_GROQ_API_KEY;
+// Permite redirecionar para um proxy (recomendado em produção para esconder a API key).
+const GROQ_API_URL =
+  (import.meta as any).env.VITE_GROQ_API_URL ||
+  'https://api.groq.com/openai/v1/chat/completions';
+
+// Janela deslizante: número de mensagens enviadas como contexto à API.
+// Mantém memória da conversa sem estourar o limite de tokens da Groq.
+const MAX_HISTORY_MESSAGES = 30;
+
+// Compatibilidade: mensagens antigas guardadas com source='HELIOS' ficam mapeadas para 'VIMO'.
+const normalizeMessage = (m: any): LogMessage => ({
+  ...m,
+  source: m.source === 'HELIOS' ? 'VIMO' : m.source,
+});
 
 export const useChat = (user: User | null, onReply: (text: string) => void) => {
   const [logs, setLogs] = useState<LogMessage[]>([]);
   const [chatList, setChatList] = useState<Chat[]>([]);
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);
+  // Chats antigos (formato array no doc) continuam a usar esse formato; novos usam subcoleção.
+  const [isLegacyChat, setIsLegacyChat] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
   const makeId = () => Math.random().toString(36).substring(2, 9);
@@ -40,14 +56,29 @@ export const useChat = (user: User | null, onReply: (text: string) => void) => {
   const loadChat = useCallback(async (id: string) => {
     setCurrentChatId(id);
     const chatDoc = await getDoc(doc(db, 'chats', id));
-    if (chatDoc.exists()) {
-      setLogs(chatDoc.data().messages || []);
-      addLog('SYSTEM', 'Histórico carregado.');
+    if (!chatDoc.exists()) return;
+
+    const data = chatDoc.data();
+    let messages: LogMessage[];
+
+    if (Array.isArray(data.messages)) {
+      messages = data.messages.map(normalizeMessage);
+      setIsLegacyChat(true);
+    } else {
+      const msgsSnap = await getDocs(
+        query(collection(db, 'chats', id, 'messages'), orderBy('createdAt', 'asc'))
+      );
+      messages = msgsSnap.docs.map(d => normalizeMessage(d.data()));
+      setIsLegacyChat(false);
     }
+
+    setLogs(messages);
+    addLog('SYSTEM', 'Histórico carregado.');
   }, [addLog]);
 
   const newChat = useCallback(() => {
     setCurrentChatId(null);
+    setIsLegacyChat(false);
     setLogs([]);
   }, []);
 
@@ -77,9 +108,11 @@ export const useChat = (user: User | null, onReply: (text: string) => void) => {
         },
       ];
 
-      logs.forEach(l => {
+      // Janela deslizante — só envia as últimas N mensagens para preservar contexto sem estourar tokens.
+      const recentLogs = logs.slice(-MAX_HISTORY_MESSAGES);
+      recentLogs.forEach(l => {
         if (l.source === 'USER') apiMessages.push({ role: 'user', content: l.text });
-        if (l.source === 'HELIOS') apiMessages.push({ role: 'assistant', content: l.text });
+        if (l.source === 'VIMO') apiMessages.push({ role: 'assistant', content: l.text });
       });
 
       if (attachment) {
@@ -94,12 +127,13 @@ export const useChat = (user: User | null, onReply: (text: string) => void) => {
         apiMessages.push({ role: 'user', content: text });
       }
 
-      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      // Quando se usa um proxy, a chave fica do lado do servidor — não a enviamos do cliente.
+      if (GROQ_API_KEY) headers.Authorization = `Bearer ${GROQ_API_KEY}`;
+
+      const response = await fetch(GROQ_API_URL, {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${GROQ_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify({
           model: attachment ? VISION_MODEL : TEXT_MODEL,
           messages: apiMessages,
@@ -114,7 +148,7 @@ export const useChat = (user: User | null, onReply: (text: string) => void) => {
 
       const vimoMsg: LogMessage = {
         id: makeId(),
-        source: 'HELIOS',
+        source: 'VIMO',
         text: replyText,
         timestamp: makeTimestamp(),
       };
@@ -125,18 +159,31 @@ export const useChat = (user: User | null, onReply: (text: string) => void) => {
 
       if (user) {
         if (!currentChatId) {
-          const docRef = await addDoc(collection(db, 'chats'), {
+          // Chat novo — cria doc + subcoleção 'messages'.
+          const chatRef = await addDoc(collection(db, 'chats'), {
             userId: user.uid,
             title: text.substring(0, 35) || 'Nova Conversa',
             updatedAt: serverTimestamp(),
-            messages: updatedLogs,
           });
-          setCurrentChatId(docRef.id);
-        } else {
+          await Promise.all([
+            addDoc(collection(db, 'chats', chatRef.id, 'messages'), { ...userMsg, createdAt: serverTimestamp() }),
+            addDoc(collection(db, 'chats', chatRef.id, 'messages'), { ...vimoMsg, createdAt: serverTimestamp() }),
+          ]);
+          setCurrentChatId(chatRef.id);
+          setIsLegacyChat(false);
+        } else if (isLegacyChat) {
+          // Mantém compatibilidade com chats antigos que guardam tudo num array.
           await updateDoc(doc(db, 'chats', currentChatId), {
             updatedAt: serverTimestamp(),
             messages: updatedLogs,
           });
+        } else {
+          // Append incremental: só escreve as duas mensagens novas, não reescreve tudo.
+          await Promise.all([
+            addDoc(collection(db, 'chats', currentChatId, 'messages'), { ...userMsg, createdAt: serverTimestamp() }),
+            addDoc(collection(db, 'chats', currentChatId, 'messages'), { ...vimoMsg, createdAt: serverTimestamp() }),
+            updateDoc(doc(db, 'chats', currentChatId), { updatedAt: serverTimestamp() }),
+          ]);
         }
       }
     } catch (e: unknown) {
@@ -145,7 +192,7 @@ export const useChat = (user: User | null, onReply: (text: string) => void) => {
     } finally {
       setIsLoading(false);
     }
-  }, [logs, isLoading, currentChatId, user, onReply, addLog]);
+  }, [logs, isLoading, currentChatId, isLegacyChat, user, onReply, addLog]);
 
   return {
     logs, chatList, currentChatId, isLoading,
