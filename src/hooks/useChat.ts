@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react';
 import type { User } from 'firebase/auth';
 import {
   collection, query, where, orderBy, onSnapshot,
-  addDoc, updateDoc, doc, serverTimestamp, getDoc, getDocs,
+  addDoc, updateDoc, doc, serverTimestamp, getDoc, getDocs, deleteDoc,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import type { LogMessage, Chat, Attachment } from '../types';
@@ -81,6 +81,14 @@ export const useChat = (user: User | null, onReply: (text: string) => void) => {
     setIsLegacyChat(false);
     setLogs([]);
   }, []);
+
+  const deleteChat = useCallback(async (id: string) => {
+    await deleteDoc(doc(db, 'chats', id));
+    if (currentChatId === id) {
+      setCurrentChatId(null);
+      setLogs([]);
+    }
+  }, [currentChatId]);
 
   const sendMessage = useCallback(async (
     text: string,
@@ -196,6 +204,6 @@ export const useChat = (user: User | null, onReply: (text: string) => void) => {
 
   return {
     logs, chatList, currentChatId, isLoading,
-    addLog, sendMessage, newChat, loadChat, subscribeToChats,
+    addLog, sendMessage, newChat, loadChat, deleteChat, subscribeToChats,
   };
 };

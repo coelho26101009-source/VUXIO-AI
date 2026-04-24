@@ -1,8 +1,47 @@
-import React from 'react';
-import { Plus, MessageSquare, LogOut, LogIn, Mic, MicOff } from 'lucide-react';
+import React, { useState } from 'react';
+import { Plus, MessageSquare, LogOut, LogIn, Mic, MicOff, Trash2 } from 'lucide-react';
 import type { User } from 'firebase/auth';
 import type { Chat } from '../types';
 import { VimoAvatar } from './VimoAvatar';
+
+const ChatItem: React.FC<{
+  chat: Chat;
+  isActive: boolean;
+  onLoad: () => void;
+  onDelete: () => void;
+}> = ({ chat, isActive, onLoad, onDelete }) => {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <div
+      className="relative flex items-center rounded-xl transition-all duration-150"
+      style={{
+        background: isActive
+          ? 'linear-gradient(135deg,rgba(124,58,237,0.2),rgba(99,102,241,0.15))'
+          : hovered ? 'rgba(255,255,255,0.04)' : 'transparent',
+        border: isActive ? '1px solid rgba(139,92,246,0.3)' : '1px solid transparent',
+      }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <button
+        onClick={onLoad}
+        className="flex-1 text-left px-3 py-2.5 text-sm truncate"
+        style={{ color: isActive ? '#c4b5fd' : 'rgba(255,255,255,0.4)' }}
+      >
+        {chat.title}
+      </button>
+      {hovered && (
+        <button
+          onClick={e => { e.stopPropagation(); onDelete(); }}
+          className="shrink-0 p-1.5 mr-1 rounded-lg text-white/20 hover:text-red-400 hover:bg-red-500/10 transition-all"
+          title="Apagar conversa"
+        >
+          <Trash2 size={13} />
+        </button>
+      )}
+    </div>
+  );
+};
 
 interface SidebarProps {
   user: User | null;
@@ -14,6 +53,7 @@ interface SidebarProps {
   isListening: boolean;
   onNewChat: () => void;
   onLoadChat: (id: string) => void;
+  onDeleteChat: (id: string) => void;
   onLogout: () => void;
   onLogin: () => void;
   onToggleMic: () => void;
@@ -23,7 +63,7 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({
   user, isGuest, chatList, currentChatId,
   isConnected, isSpeaking, isListening,
-  onNewChat, onLoadChat, onLogout, onLogin, onToggleMic,
+  onNewChat, onLoadChat, onDeleteChat, onLogout, onLogin, onToggleMic,
 }) => {
   return (
     <aside
@@ -89,22 +129,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* ── Histórico ── */}
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1 vimo-scroll">
         {user && chatList.length > 0 && chatList.map(chat => (
-          <button
+          <ChatItem
             key={chat.id}
-            onClick={() => onLoadChat(chat.id)}
-            className="w-full text-left px-3 py-2.5 rounded-xl text-sm transition-all duration-150"
-            style={{
-              background: currentChatId === chat.id
-                ? 'linear-gradient(135deg,rgba(124,58,237,0.2),rgba(99,102,241,0.15))'
-                : 'transparent',
-              border: currentChatId === chat.id
-                ? '1px solid rgba(139,92,246,0.3)'
-                : '1px solid transparent',
-              color: currentChatId === chat.id ? '#c4b5fd' : 'rgba(255,255,255,0.4)',
-            }}
-          >
-            <span className="truncate block">{chat.title}</span>
-          </button>
+            chat={chat}
+            isActive={currentChatId === chat.id}
+            onLoad={() => onLoadChat(chat.id)}
+            onDelete={() => onDeleteChat(chat.id)}
+          />
         ))}
 
         {isGuest && (
