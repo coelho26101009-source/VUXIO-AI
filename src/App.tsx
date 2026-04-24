@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { ChevronDown, Menu } from 'lucide-react';
+import { ChevronDown, Menu, Volume2, VolumeX, User } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 
 import { useAuth } from './hooks/useAuth';
@@ -55,13 +55,19 @@ const App: React.FC = () => {
   const { user, authMode, login, logout, continueAsGuest } = useAuth();
   const { isSpeaking, isListening, speak, toggleMic } = useSpeech();
   const [isConnected, setIsConnected] = useState(false);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isMuted, setIsMuted] = useState(false);
   const [currentTime, setCurrentTime] = useState('--:--:--');
   const [currentDate, setCurrentDate] = useState('--/--');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const toggleMute = () => {
+    window.speechSynthesis?.cancel();
+    setIsMuted(prev => !prev);
+  };
+
   const { logs, chatList, currentChatId, isLoading, sendMessage, newChat, loadChat, subscribeToChats } =
-    useChat(user, speak);
+    useChat(user, isMuted ? () => {} : speak);
 
   const hasMessages = logs.filter(l => l.source !== 'SYSTEM').length > 0;
 
@@ -99,23 +105,26 @@ const App: React.FC = () => {
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#0b0b1a]">
-      {/* Overlay Mobile */}
+      {/* Overlay (mobile apenas) */}
       {isSidebarOpen && <div className="md:hidden fixed inset-0 z-40 bg-black/60 backdrop-blur-sm" onClick={() => setIsSidebarOpen(false)} />}
 
-      {/* Sidebar Retrátil */}
-      <div className={`fixed md:static inset-y-0 left-0 z-50 transform transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}>
+      {/* Sidebar retrátil em todos os tamanhos */}
+      <div className={`fixed md:relative inset-y-0 left-0 z-50 shrink-0 transform transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0 md:block' : '-translate-x-full md:hidden'}`}>
         <Sidebar user={user} isGuest={authMode === 'guest'} chatList={chatList} currentChatId={currentChatId} isConnected={isConnected} isSpeaking={isSpeaking} isListening={isListening} onNewChat={() => { newChat(); setIsSidebarOpen(false); }} onLoadChat={(id) => { loadChat(id); setIsSidebarOpen(false); }} onLogout={logout} onLogin={login} onToggleMic={() => toggleMic((t) => window.dispatchEvent(new CustomEvent('vimo-transcript', { detail: t })))} />
       </div>
 
       <div className="flex-1 flex flex-col min-w-0">
         <header className="h-[60px] flex items-center justify-between px-4 sm:px-6 bg-[#0b0b1a]/80 backdrop-blur-xl border-b border-white/5">
           <div className="flex items-center gap-3">
-            <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="md:hidden p-2 text-white/50"><Menu size={22} /></button>
+            <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 text-white/50 hover:text-white/80 transition-colors"><Menu size={22} /></button>
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-purple-500/10 border border-purple-500/20 text-white/50 text-xs">
               <span className="w-1.5 h-1.5 rounded-full bg-[#4ade80] shadow-[0_0_6px_#4ade80]" />
               <span className="font-medium">VIMO V1.0</span>
               <ChevronDown size={11} />
             </div>
+            <button onClick={toggleMute} title={isMuted ? 'Ativar voz' : 'Silenciar'} className="p-2 text-white/50 hover:text-white/80 transition-colors">
+              {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
+            </button>
           </div>
           <div className="flex items-center gap-3">
             <div className="hidden sm:flex gap-3 px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-center">
@@ -124,7 +133,11 @@ const App: React.FC = () => {
               <div><p className="font-mono text-xs text-purple-400 leading-none">{currentDate}</p><p className="text-[9px] text-white/20 mt-0.5">HOJE</p></div>
             </div>
             <div className="w-8 h-8 rounded-full bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-purple-300 text-xs font-bold">
-              {user?.photoURL ? <img src={user.photoURL} className="w-full h-full object-cover rounded-full" /> : (user?.displayName?.charAt(0) || '?')}
+              {user?.photoURL
+                ? <img src={user.photoURL} className="w-full h-full object-cover rounded-full" alt="avatar" />
+                : user?.displayName?.charAt(0)
+                  ? user.displayName.charAt(0)
+                  : <User size={14} />}
             </div>
           </div>
         </header>
