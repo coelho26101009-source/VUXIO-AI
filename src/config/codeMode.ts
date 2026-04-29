@@ -6,10 +6,6 @@ export const CODE_MODEL = 'gemini-1.5-flash';
 
 export const GEMINI_API_KEY = (import.meta as any).env.VITE_GEMINI_API_KEY as string;
 
-export const GEMINI_API_URL =
-  (import.meta as any).env.VITE_GEMINI_API_URL ||
-  'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
-
 export const buildCodeSystemPrompt = (userName: string) =>
   `Tu és o VUXIO em modo PROGRAMADOR, assistente técnico de código criado pelo Simão. Utilizador: ${userName}.
 Regras obrigatórias:

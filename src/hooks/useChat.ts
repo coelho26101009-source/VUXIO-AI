@@ -6,7 +6,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import type { LogMessage, Chat, Attachment } from '../types';
-import { CODE_MODEL, GEMINI_API_KEY, GEMINI_API_URL, buildCodeSystemPrompt } from '../config/codeMode';
+import { CODE_MODEL, GEMINI_API_KEY, buildCodeSystemPrompt } from '../config/codeMode';
 
 const TEXT_MODEL = 'llama-3.3-70b-versatile';
 const VISION_MODEL = 'llama-3.2-11b-vision-preview';
@@ -137,29 +137,41 @@ export const useChat = (user: User | null, onReply: (text: string) => void, code
         apiMessages.push({ role: 'user', content: text });
       }
 
-      const apiKey = codeMode ? GEMINI_API_KEY : GROQ_API_KEY;
-      const apiUrl = codeMode ? GEMINI_API_URL : GROQ_API_URL;
-      const model = codeMode ? CODE_MODEL : (attachment ? VISION_MODEL : TEXT_MODEL);
-
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
-
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          model,
-          messages: apiMessages,
-          temperature: codeMode ? 0.3 : 0.7,
-        }),
-      });
-
-      if (!response.ok) {
-        const apiName = codeMode ? 'Gemini' : 'Groq';
-        throw new Error(`${apiName} API ${response.status}: ${response.statusText}`);
+      if (codeMode) {
+        // API nativa do Gemini (mais fiável que o endpoint OpenAI-compatível)
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${CODE_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+        const geminiContents = apiMessages
+          .filter(m => m.role !== 'system')
+          .map(m => ({
+            role: m.role === 'assistant' ? 'model' : 'user',
+            parts: [{ text: m.content as string }],
+          }));
+        const geminiBody = {
+          system_instruction: { parts: [{ text: systemPrompt }] },
+          contents: geminiContents,
+          generationConfig: { temperature: 0.3 },
+        };
+        const geminiRes = await fetch(geminiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(geminiBody),
+        });
+        if (!geminiRes.ok) throw new Error(`Gemini API ${geminiRes.status}: ${geminiRes.statusText}`);
+        const geminiData = await geminiRes.json();
+        replyText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || 'Sem resposta.';
+      } else {
+        const model = attachment ? VISION_MODEL : TEXT_MODEL;
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (GROQ_API_KEY) headers.Authorization = `Bearer ${GROQ_API_KEY}`;
+        const response = await fetch(GROQ_API_URL, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ model, messages: apiMessages, temperature: 0.7 }),
+        });
+        if (!response.ok) throw new Error(`Groq API ${response.status}: ${response.statusText}`);
+        const data = await response.json();
+        replyText = (data.choices[0]?.message?.content as string) || 'Sem resposta.';
       }
-      const data = await response.json();
-      replyText = (data.choices[0]?.message?.content as string) || 'Sem resposta.';
     } catch (e: unknown) {
       console.error(e);
       const msg = codeMode
