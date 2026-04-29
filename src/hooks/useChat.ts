@@ -154,12 +154,18 @@ export const useChat = (user: User | null, onReply: (text: string) => void, code
         }),
       });
 
-      if (!response.ok) throw new Error(`Groq API: ${response.statusText}`);
+      if (!response.ok) {
+        const apiName = codeMode ? 'Gemini' : 'Groq';
+        throw new Error(`${apiName} API ${response.status}: ${response.statusText}`);
+      }
       const data = await response.json();
       replyText = (data.choices[0]?.message?.content as string) || 'Sem resposta.';
     } catch (e: unknown) {
       console.error(e);
-      addLog('ERROR', 'Falha na comunicação com o servidor. Tenta novamente.');
+      const msg = codeMode
+        ? 'Erro ao contactar o Gemini. Verifica a chave da API ou tenta novamente.'
+        : 'Falha na comunicação com o servidor. Tenta novamente.';
+      addLog('ERROR', msg);
       setIsLoading(false);
       return;
     }
