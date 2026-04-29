@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+﻿import React, { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
@@ -34,21 +34,21 @@ export const Terminal: React.FC<TerminalProps> = ({ logs }) => {
 
   const sourceLabel: Record<LogMessage['source'], string> = {
     USER: 'TU',
-    VIMO: 'Vimo AI',
+    VUXIO: 'VUXIO AI',
     SYSTEM: 'SYS',
     ERROR: 'ERR',
   };
 
   const sourceColor: Record<LogMessage['source'], string> = {
     USER: 'text-amber-400 border-amber-500/30 bg-amber-500/10',
-    VIMO: 'text-cyan-400 border-cyan-500/30 bg-cyan-500/10',
+    VUXIO: 'text-cyan-400 border-cyan-500/30 bg-cyan-500/10',
     SYSTEM: 'text-slate-400 border-slate-500/20 bg-slate-500/5',
     ERROR: 'text-red-400 border-red-500/30 bg-red-500/10',
   };
 
   const bubbleColor: Record<LogMessage['source'], string> = {
     USER: 'bg-amber-500/10 border-amber-500/15 text-amber-50',
-    VIMO: 'bg-[#1e2235] border-white/8 text-gray-100',
+    VUXIO: 'bg-[#1e2235] border-white/8 text-gray-100',
     SYSTEM: 'bg-transparent border-transparent text-slate-500 text-xs font-mono',
     ERROR: 'bg-red-900/10 border-red-500/15 text-red-200',
   };
@@ -78,12 +78,12 @@ export const Terminal: React.FC<TerminalProps> = ({ logs }) => {
         {logs.map(log => (
           <div key={log.id} className={`flex gap-3 ${log.source === 'USER' ? 'flex-row-reverse' : ''} animate-in fade-in slide-in-from-bottom-2 duration-300`}>
             <div className={`shrink-0 w-7 h-7 rounded-full flex items-center justify-center border text-[9px] font-bold mt-1 ${sourceColor[log.source]}`}>
-              {sourceLabel[log.source] === 'Vimo AI' ? 'IA' : sourceLabel[log.source]}
+              {sourceLabel[log.source] === 'VUXIO AI' ? 'IA' : sourceLabel[log.source]}
             </div>
 
             <div className={`flex flex-col max-w-[85%] ${log.source === 'USER' ? 'items-end' : 'items-start'}`}>
               <span className="text-[10px] text-white/25 mb-1 px-1">
-                {log.timestamp} {log.source === 'VIMO' ? '· Vimo' : log.source === 'SYSTEM' ? '· Sistema' : ''}
+                {log.timestamp} {log.source === 'VUXIO' ? '· VUXIO' : log.source === 'SYSTEM' ? '· Sistema' : ''}
               </span>
               <div className={`relative px-4 py-3 rounded-2xl border backdrop-blur-sm overflow-hidden ${bubbleColor[log.source]} ${log.source === 'USER' ? 'rounded-tr-sm' : 'rounded-tl-sm'}`}>
                 {log.source === 'SYSTEM' ? (

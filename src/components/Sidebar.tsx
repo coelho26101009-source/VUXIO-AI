@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { Plus, MessageSquare, LogOut, LogIn, Mic, MicOff, Trash2 } from 'lucide-react';
 import type { User } from 'firebase/auth';
 import type { Chat } from '../types';
-import { VimoAvatar } from './VimoAvatar';
+import { VuxioAvatar } from './VuxioAvatar';
 
 const ChatItem: React.FC<{
   chat: Chat;
@@ -124,9 +124,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
     >
       {/* ── Avatar + nome ── */}
       <div className="flex flex-col items-center gap-3 pt-8 pb-6 px-5">
-        <VimoAvatar size={64} isConnected={isConnected} isSpeaking={isSpeaking} isCodeMode={isCodeMode} />
+        <VuxioAvatar size={64} isConnected={isConnected} isSpeaking={isSpeaking} isCodeMode={isCodeMode} />
         <div className="text-center">
-          <p className="text-white font-bold text-base tracking-wide">VIMO</p>
+          <p className="text-white font-bold text-base tracking-wide">VUXIO</p>
           <p className={`text-[11px] tracking-widest uppercase font-mono ${c.versionColor}`}>
             {isCodeMode ? 'CODE MODE' : 'V1.0'}
           </p>
@@ -152,7 +152,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="h-px mx-5 mt-4" style={{ background: c.divider }} />
 
       {/* ── Histórico ── */}
-      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1 vimo-scroll">
+      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1 VUXIO-scroll">
         {user && chatList.length > 0 && (
           <>
             <div className="flex items-center justify-between px-1 mb-2">

@@ -1,4 +1,4 @@
-import React, { useRef, useState, useCallback, useEffect } from 'react';
+﻿import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { Paperclip, Send, X } from 'lucide-react';
 import type { Attachment } from '../types';
 
@@ -23,8 +23,8 @@ export const InputBar: React.FC<InputBarProps> = ({ onSend, isLoading, isConnect
       setText(prev => prev ? `${prev} ${transcript}` : transcript);
       textareaRef.current?.focus();
     };
-    window.addEventListener('vimo-transcript', handler);
-    return () => window.removeEventListener('vimo-transcript', handler);
+    window.addEventListener('VUXIO-transcript', handler);
+    return () => window.removeEventListener('VUXIO-transcript', handler);
   }, []);
 
   const handleSend = useCallback(() => {
@@ -104,7 +104,7 @@ export const InputBar: React.FC<InputBarProps> = ({ onSend, isLoading, isConnect
           disabled={!isConnected || isLoading}
           placeholder={
             !isConnected ? 'A conectar...' :
-            isLoading ? 'Vimo está a pensar...' :
+            isLoading ? 'VUXIO está a pensar...' :
             'Escreve a tua mensagem...'
           }
           className="flex-1 bg-transparent border-none outline-none resize-none text-sm leading-relaxed"

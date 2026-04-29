@@ -1,6 +1,6 @@
-import React from 'react';
+﻿import React from 'react';
 import { LogIn, UserCircle2 } from 'lucide-react';
-import { VimoAvatar } from './VimoAvatar';
+import { VuxioAvatar } from './VuxioAvatar';
 
 interface LoginScreenProps {
   onLogin: () => void;
@@ -24,7 +24,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onGuest, isAu
       <div className="relative z-10 flex flex-col items-center w-full max-w-sm px-6">
         {/* Avatar */}
         <div className="mb-6">
-          <VimoAvatar size={72} isConnected={true} isSpeaking={false} />
+          <VuxioAvatar size={72} isConnected={true} isSpeaking={false} />
         </div>
 
         {/* Title */}
@@ -38,7 +38,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onGuest, isAu
             filter: 'drop-shadow(0 0 24px rgba(168,85,247,0.4))',
           }}
         >
-          VimoMind AI
+          Vuxio AI
         </h1>
         <p className="text-xs uppercase tracking-[0.35em] mb-10"
           style={{ color: 'rgba(168,85,247,0.45)' }}>

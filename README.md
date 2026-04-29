@@ -1,8 +1,8 @@
-<div align="center">
+﻿<div align="center">
 
-<img src="public/vite.svg" width="72" alt="VIMO logo" />
+<img src="public/vite.svg" width="72" alt="VUXIO logo" />
 
-# VIMO Mind AI
+# Vuxio AI
 
 **Assistente de inteligência artificial conversacional com modo programador integrado**
 
@@ -18,7 +18,7 @@
 
 ## Sobre o Projeto
 
-O **VIMO Mind AI** é uma aplicação web de chat com inteligência artificial, desenvolvida de raiz por **Simão**. Combina uma interface elegante e fluida com um backend de IA potente (LLaMA 3.3 70B via Groq API), autenticação com Google e persistência de conversas em tempo real.
+O **Vuxio AI** é uma aplicação web de chat com inteligência artificial, desenvolvida de raiz por **Simão**. Combina uma interface elegante e fluida com um backend de IA potente (LLaMA 3.3 70B via Groq API), autenticação com Google e persistência de conversas em tempo real.
 
 Destaca-se pelo **Modo Programador** — um modo dedicado para developers, com tema visual verde, respostas técnicas e diretas, blocos de código com syntax highlighting e opção de download dos ficheiros gerados.
 
@@ -67,7 +67,7 @@ src/
 │   ├── InputBar.tsx          # Barra de input com anexos
 │   ├── MarkdownMessage.tsx   # Renderer de markdown com syntax highlight e download
 │   ├── Sidebar.tsx           # Painel lateral com histórico de conversas
-│   └── VimoAvatar.tsx        # Avatar animado (partículas + anéis)
+│   └── VuxioAvatar.tsx        # Avatar animado (partículas + anéis)
 ├── hooks/
 │   ├── useAuth.ts            # Firebase Auth — Google login + modo convidado
 │   ├── useChat.ts            # Lógica de chat — Groq API + persistência Firebase
@@ -88,5 +88,5 @@ Este projeto está licenciado sob a [MIT License](./LICENSE) — podes usar e mo
 ---
 
 <div align="center">
-  <sub>Feito com ♥ por Simão · VIMO Mind AI v1.0</sub>
+  <sub>Feito com ♥ por Simão · Vuxio AI v1.0</sub>
 </div>

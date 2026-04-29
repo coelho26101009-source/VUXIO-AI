@@ -1,13 +1,13 @@
-import React from 'react';
+﻿import React from 'react';
 
-interface VimoCoreProps {
+interface VuxioCoreProps {
   isActive: boolean;
   isSpeaking: boolean;
   questionCount?: number;
   size?: number; // diâmetro em px, default 180
 }
 
-export const VimoCore: React.FC<VimoCoreProps> = ({
+export const VuxioCore: React.FC<VuxioCoreProps> = ({
   isActive,
   isSpeaking,
   questionCount = 0,
@@ -30,7 +30,7 @@ export const VimoCore: React.FC<VimoCoreProps> = ({
         style={{
           inset: '7%',
           border: '0.5px dashed rgba(245,158,11,0.1)',
-          animation: isActive ? 'helios-rotate-cw 60s linear infinite' : undefined,
+          animation: isActive ? 'VUXIO-rotate-cw 60s linear infinite' : undefined,
           opacity: isActive ? 1 : 0,
           transition: 'opacity 0.5s',
         }}
@@ -40,7 +40,7 @@ export const VimoCore: React.FC<VimoCoreProps> = ({
         style={{
           inset: '17%',
           border: '0.5px solid rgba(245,158,11,0.06)',
-          animation: isActive ? 'helios-rotate-ccw 45s linear infinite' : undefined,
+          animation: isActive ? 'VUXIO-rotate-ccw 45s linear infinite' : undefined,
           opacity: isActive ? 1 : 0,
           transition: 'opacity 0.5s',
         }}
@@ -69,7 +69,7 @@ export const VimoCore: React.FC<VimoCoreProps> = ({
               transform: 'translate(-50%, -50%)',
               background: '#fff',
               boxShadow: `0 0 ${starPx * 3}px rgba(255,255,255,0.9), 0 0 ${starPx * 6}px rgba(245,158,11,0.5)`,
-              animation: `helios-star-tw ${twinkle} ease-in-out infinite ${delay}`,
+              animation: `VUXIO-star-tw ${twinkle} ease-in-out infinite ${delay}`,
             }}
           />
         );
@@ -79,7 +79,7 @@ export const VimoCore: React.FC<VimoCoreProps> = ({
       {isActive && (
         <div
           className="absolute inset-0 pointer-events-none"
-          style={{ animation: 'helios-rotate-cw 8s linear infinite' }}
+          style={{ animation: 'VUXIO-rotate-cw 8s linear infinite' }}
         >
           <div
             className="absolute rounded-full"
@@ -108,7 +108,7 @@ export const VimoCore: React.FC<VimoCoreProps> = ({
           boxShadow: isActive
             ? `0 0 ${isSpeaking ? 50 : 20}px rgba(245,158,11,${isSpeaking ? 0.4 : 0.12})`
             : 'none',
-          animation: isSpeaking ? 'helios-nucleus-pulse 1s ease-in-out infinite' : undefined,
+          animation: isSpeaking ? 'VUXIO-nucleus-pulse 1s ease-in-out infinite' : undefined,
         }}
       >
         {/* Gradiente solar */}
@@ -119,7 +119,7 @@ export const VimoCore: React.FC<VimoCoreProps> = ({
             height: '88%',
             background: 'linear-gradient(135deg, #f59e0b, #f97316, #fbbf24)',
             opacity: isActive ? (isSpeaking ? 1 : 0.85) : 0.2,
-            animation: isActive ? 'helios-rotate-cw 10s linear infinite' : undefined,
+            animation: isActive ? 'VUXIO-rotate-cw 10s linear infinite' : undefined,
           }}
         >
           <div
@@ -137,7 +137,7 @@ export const VimoCore: React.FC<VimoCoreProps> = ({
             className="w-full h-full"
             style={{
               opacity: isActive ? 1 : 0.15,
-              animation: isActive ? 'helios-rotate-cw 20s linear infinite' : undefined,
+              animation: isActive ? 'VUXIO-rotate-cw 20s linear infinite' : undefined,
             }}
           >
             <circle cx="50" cy="50" r="48" fill="none" stroke="rgba(245,158,11,0.2)" strokeWidth="0.5" strokeDasharray="3 5" />

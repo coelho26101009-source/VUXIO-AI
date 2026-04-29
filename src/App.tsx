@@ -8,11 +8,11 @@ import { useSpeech } from './hooks/useSpeech';
 
 import { LoginScreen } from './components/LoginScreen';
 import { Sidebar } from './components/Sidebar';
-import { VimoAvatar } from './components/VimoAvatar';
+import { VuxioAvatar } from './components/VuxioAvatar';
 import { InputBar } from './components/InputBar';
 import type { Attachment } from './types';
 
-const VimoSphere: React.FC<{ isConnected: boolean; isSpeaking: boolean; isCodeMode: boolean }> = ({
+const VuxioSphere: React.FC<{ isConnected: boolean; isSpeaking: boolean; isCodeMode: boolean }> = ({
   isConnected, isSpeaking, isCodeMode,
 }) => {
   const dots = Array.from({ length: 90 });
@@ -29,18 +29,18 @@ const VimoSphere: React.FC<{ isConnected: boolean; isSpeaking: boolean; isCodeMo
 
       {/* Anel 1 — horizontal, lento */}
       <div className={`absolute inset-0 rounded-full border ${isCodeMode ? 'border-green-400/20' : 'border-purple-400/20'}`}
-        style={{ animation: isConnected ? 'vimo-orbit 18s linear infinite' : 'none' }} />
+        style={{ animation: isConnected ? 'VUXIO-orbit 18s linear infinite' : 'none' }} />
 
       {/* Anel 2 — horizontal reverso, médio */}
       <div className={`absolute rounded-full border ${isCodeMode ? 'border-emerald-300/15' : 'border-indigo-400/15'}`}
-        style={{ inset: '8%', animation: isConnected ? 'vimo-orbit-r 10s linear infinite' : 'none' }} />
+        style={{ inset: '8%', animation: isConnected ? 'VUXIO-orbit-r 10s linear infinite' : 'none' }} />
 
       {/* Anel 3 — elíptico (simulação 3D) */}
       <div className={`absolute rounded-full border ${isCodeMode ? 'border-green-300/10' : 'border-violet-400/10'}`}
         style={{
           inset: '4%',
           transform: 'scaleY(0.28) rotate(20deg)',
-          animation: isConnected ? 'vimo-orbit 14s linear infinite' : 'none',
+          animation: isConnected ? 'VUXIO-orbit 14s linear infinite' : 'none',
         }} />
 
       {/* Anel 4 — elíptico oposto */}
@@ -48,7 +48,7 @@ const VimoSphere: React.FC<{ isConnected: boolean; isSpeaking: boolean; isCodeMo
         style={{
           inset: '12%',
           transform: 'scaleY(0.28) rotate(-20deg)',
-          animation: isConnected ? 'vimo-orbit-r 22s linear infinite' : 'none',
+          animation: isConnected ? 'VUXIO-orbit-r 22s linear infinite' : 'none',
         }} />
 
       {/* Esfera de pontos */}
@@ -67,7 +67,7 @@ const VimoSphere: React.FC<{ isConnected: boolean; isSpeaking: boolean; isCodeMo
               width: r * 2, height: r * 2, left: x - r, top: y - r,
               background: color, opacity,
               animation: isConnected
-                ? `vimo-twinkle ${1.2 + (i % 7) * 0.35}s ease-in-out ${(i % 5) * 0.2}s infinite`
+                ? `VUXIO-twinkle ${1.2 + (i % 7) * 0.35}s ease-in-out ${(i % 5) * 0.2}s infinite`
                 : 'none',
               boxShadow: z > 0.4 ? `0 0 ${r * 4}px ${color}` : 'none',
             }} />
@@ -79,7 +79,7 @@ const VimoSphere: React.FC<{ isConnected: boolean; isSpeaking: boolean; isCodeMo
           width: isSpeaking ? 60 : 44, height: isSpeaking ? 60 : 44,
           left: '50%', top: '50%', transform: 'translate(-50%,-50%)',
           background: `radial-gradient(circle, ${glowColor}0.7) 0%, ${glowColor}0.2) 50%, transparent 75%)`,
-          animation: isConnected ? 'vimo-core-pulse 2.5s ease-in-out infinite' : 'none',
+          animation: isConnected ? 'VUXIO-core-pulse 2.5s ease-in-out infinite' : 'none',
         }} />
       </div>
     </div>
@@ -146,7 +146,7 @@ const App: React.FC = () => {
 
       {/* Sidebar retrátil em todos os tamanhos */}
       <div className={`fixed md:relative inset-y-0 left-0 z-50 shrink-0 transform transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0 md:block' : '-translate-x-full md:hidden'}`}>
-        <Sidebar user={user} isGuest={authMode === 'guest'} chatList={chatList} currentChatId={currentChatId} isConnected={isConnected} isSpeaking={isSpeaking} isListening={isListening} isCodeMode={isCodeMode} onNewChat={() => { newChat(); setIsSidebarOpen(false); }} onLoadChat={(id) => { loadChat(id); setIsSidebarOpen(false); }} onDeleteChat={deleteChat} onLogout={logout} onLogin={login} onToggleMic={() => toggleMic((t) => window.dispatchEvent(new CustomEvent('vimo-transcript', { detail: t })))} />
+        <Sidebar user={user} isGuest={authMode === 'guest'} chatList={chatList} currentChatId={currentChatId} isConnected={isConnected} isSpeaking={isSpeaking} isListening={isListening} isCodeMode={isCodeMode} onNewChat={() => { newChat(); setIsSidebarOpen(false); }} onLoadChat={(id) => { loadChat(id); setIsSidebarOpen(false); }} onDeleteChat={deleteChat} onLogout={logout} onLogin={login} onToggleMic={() => toggleMic((t) => window.dispatchEvent(new CustomEvent('VUXIO-transcript', { detail: t })))} />
       </div>
 
       <div className="flex-1 flex flex-col min-w-0">
@@ -155,7 +155,7 @@ const App: React.FC = () => {
             <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 text-white/50 hover:text-white/80 transition-colors"><Menu size={22} /></button>
             <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-mono ${isCodeMode ? 'bg-green-500/10 border-green-500/20 text-green-400/80' : 'bg-purple-500/10 border-purple-500/20 text-white/50'}`}>
               <span className="w-1.5 h-1.5 rounded-full bg-[#4ade80] shadow-[0_0_6px_#4ade80]" />
-              <span className="font-medium">{isCodeMode ? 'VIMO::CODE' : 'VIMO V1.0'}</span>
+              <span className="font-medium">{isCodeMode ? 'VUXIO::CODE' : 'VUXIO V1.0'}</span>
               <ChevronDown size={11} />
             </div>
             <button onClick={toggleMute} title={isMuted ? 'Ativar voz' : 'Silenciar'} className="p-2 text-white/50 hover:text-white/80 transition-colors">
@@ -201,13 +201,13 @@ const App: React.FC = () => {
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto vimo-scroll p-4 sm:p-6">
+        <main className="flex-1 overflow-y-auto VUXIO-scroll p-4 sm:p-6">
           {!hasMessages ? (
             <div className="h-full flex flex-col items-center justify-center gap-6">
-              <VimoSphere isConnected={isConnected} isSpeaking={isSpeaking} isCodeMode={isCodeMode} />
+              <VuxioSphere isConnected={isConnected} isSpeaking={isSpeaking} isCodeMode={isCodeMode} />
               {isCodeMode ? (
                 <div className="font-mono text-sm text-left space-y-1">
-                  <p className="text-green-600/60">{'// vimo --mode=programmer --lang=pt-PT'}</p>
+                  <p className="text-green-600/60">{'// VUXIO --mode=programmer --lang=pt-PT'}</p>
                   <p className="text-green-400/80">{'> Sistema inicializado.'}</p>
                   <p className="text-green-400/80">{'> Pronto para codificar.'}</p>
                   <p className="flex items-center gap-1 text-green-400">
@@ -216,14 +216,14 @@ const App: React.FC = () => {
                   </p>
                 </div>
               ) : (
-                <div className="text-center"><h2 className="text-2xl font-bold text-white">Olá, eu sou o <span className="text-purple-500">VIMO.</span></h2><p className="text-sm text-white/40">Em que posso ajudar?</p></div>
+                <div className="text-center"><h2 className="text-2xl font-bold text-white">Olá, eu sou o <span className="text-purple-500">VUXIO.</span></h2><p className="text-sm text-white/40">Em que posso ajudar?</p></div>
               )}
             </div>
           ) : (
             <div className="max-w-3xl mx-auto space-y-5">
               {logs.filter(l => l.source !== 'SYSTEM').map(log => (
                 <div key={log.id} className={`flex gap-3 animate-fade-up ${log.source === 'USER' ? 'flex-row-reverse' : ''}`}>
-                  {log.source !== 'USER' && <VimoAvatar size={36} isConnected={isConnected} isSpeaking={isSpeaking && log === logs[logs.length-1]} isCodeMode={isCodeMode} />}
+                  {log.source !== 'USER' && <VuxioAvatar size={36} isConnected={isConnected} isSpeaking={isSpeaking && log === logs[logs.length-1]} isCodeMode={isCodeMode} />}
                   <div className={`max-w-[85%] flex flex-col ${log.source === 'USER' ? 'items-end' : 'items-start'}`}>
                     <span className="text-[10px] text-white/20 mb-1">{log.timestamp}</span>
                     <div className={`px-4 py-3 text-sm rounded-2xl ${
@@ -242,13 +242,13 @@ const App: React.FC = () => {
               ))}
               {isLoading && (
                 <div className="flex gap-3 items-center animate-fade-up">
-                  <VimoAvatar size={36} isConnected={isConnected} isSpeaking={true} isCodeMode={isCodeMode} />
+                  <VuxioAvatar size={36} isConnected={isConnected} isSpeaking={true} isCodeMode={isCodeMode} />
                   <div className={`px-4 py-3 rounded-2xl text-sm flex items-center gap-2 ${isCodeMode ? 'bg-green-900/10 border border-green-500/15 font-mono text-green-400/70' : 'bg-white/5 border border-white/10 text-white/40'}`}>
                     <span>A pensar</span>
                     <span className="flex gap-1 items-center">
                       {[0, 1, 2].map(i => (
                         <span key={i} className={`w-1.5 h-1.5 rounded-full inline-block ${isCodeMode ? 'bg-green-400' : 'bg-white/40'}`}
-                          style={{ animation: `vimo-twinkle 1.1s ease-in-out ${i * 0.22}s infinite` }} />
+                          style={{ animation: `VUXIO-twinkle 1.1s ease-in-out ${i * 0.22}s infinite` }} />
                       ))}
                     </span>
                   </div>
@@ -261,12 +261,12 @@ const App: React.FC = () => {
         <div className="p-4 sm:p-6"><InputBar onSend={handleSend} isLoading={isLoading} isConnected={isConnected} /></div>
       </div>
       <style>{`
-        @keyframes vimo-orbit { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        @keyframes vimo-orbit-r { from { transform: rotate(360deg); } to { transform: rotate(0deg); } }
-        @keyframes vimo-twinkle { 0%, 100% { opacity: 0.5; transform: scale(1); } 50% { opacity: 1; transform: scale(1.5); } }
-        @keyframes vimo-core-pulse { 0%, 100% { transform: translate(-50%,-50%) scale(1); opacity: 0.7; } 50% { transform: translate(-50%,-50%) scale(1.35); opacity: 1; } }
-        .vimo-scroll::-webkit-scrollbar { width: 4px; }
-        .vimo-scroll::-webkit-scrollbar-thumb { background: rgba(124,58,237,0.2); border-radius: 4px; }
+        @keyframes VUXIO-orbit { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes VUXIO-orbit-r { from { transform: rotate(360deg); } to { transform: rotate(0deg); } }
+        @keyframes VUXIO-twinkle { 0%, 100% { opacity: 0.5; transform: scale(1); } 50% { opacity: 1; transform: scale(1.5); } }
+        @keyframes VUXIO-core-pulse { 0%, 100% { transform: translate(-50%,-50%) scale(1); opacity: 0.7; } 50% { transform: translate(-50%,-50%) scale(1.35); opacity: 1; } }
+        .VUXIO-scroll::-webkit-scrollbar { width: 4px; }
+        .VUXIO-scroll::-webkit-scrollbar-thumb { background: rgba(124,58,237,0.2); border-radius: 4px; }
         .animate-fade-up { animation: fade-up 0.3s ease-out forwards; }
         @keyframes fade-up { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
       `}</style>

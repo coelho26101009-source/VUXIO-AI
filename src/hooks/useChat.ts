@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+﻿import { useState, useCallback } from 'react';
 import type { User } from 'firebase/auth';
 import {
   collection, query, where, orderBy, onSnapshot,
@@ -19,10 +19,10 @@ const GROQ_API_URL =
 // Mantém memória da conversa sem estourar o limite de tokens da Groq.
 const MAX_HISTORY_MESSAGES = 30;
 
-// Compatibilidade: mensagens antigas guardadas com source='HELIOS' ficam mapeadas para 'VIMO'.
+// Compatibilidade: mensagens antigas guardadas com source='VUXIO' ficam mapeadas para 'VUXIO'.
 const normalizeMessage = (m: any): LogMessage => ({
   ...m,
-  source: m.source === 'HELIOS' ? 'VIMO' : m.source,
+  source: m.source === 'VUXIO' ? 'VUXIO' : m.source,
 });
 
 export const useChat = (user: User | null, onReply: (text: string) => void, codeMode = false) => {
@@ -112,8 +112,8 @@ export const useChat = (user: User | null, onReply: (text: string) => void, code
     let replyText = '';
     try {
       const systemPrompt = codeMode
-        ? `Tu és o Vimo em modo PROGRAMADOR, assistente técnico de código criado pelo Simão. Utilizador: ${userName}. Responde em PT-PT. Tom direto, zero preâmbulos. Nunca repitas o enunciado nem confirmes que entendeste. Código sempre completo e executável com linguagem indicada nos blocos. Comentários só onde o porquê não é óbvio. Aponta erros pela causa raiz. Pede esclarecimento se ambíguo.`
-        : `Tu és o Vimo, assistente do VimoMind AI criado pelo Simão. Utilizador: ${userName}. Responde em PT-PT com tom amigável e direto. Não uses frases de enchimento como "Claro!", "Com certeza!" ou "Boa pergunta!". Não repitas o que o utilizador disse. Vai direto ao conteúdo. Código em blocos com linguagem indicada.`;
+        ? `Tu és o VUXIO em modo PROGRAMADOR, assistente técnico de código criado pelo Simão. Utilizador: ${userName}. Responde em PT-PT. Tom direto, zero preâmbulos. Nunca repitas o enunciado nem confirmes que entendeste. Código sempre completo e executável com linguagem indicada nos blocos. Comentários só onde o porquê não é óbvio. Aponta erros pela causa raiz. Pede esclarecimento se ambíguo.`
+        : `Tu és o VUXIO, assistente do Vuxio AI criado pelo Simão. Utilizador: ${userName}. Responde em PT-PT com tom amigável e direto. Não uses frases de enchimento como "Claro!", "Com certeza!" ou "Boa pergunta!". Não repitas o que o utilizador disse. Vai direto ao conteúdo. Código em blocos com linguagem indicada.`;
 
       const apiMessages: { role: string; content: unknown }[] = [
         { role: 'system', content: systemPrompt },
@@ -122,7 +122,7 @@ export const useChat = (user: User | null, onReply: (text: string) => void, code
       const recentLogs = logs.slice(-MAX_HISTORY_MESSAGES);
       recentLogs.forEach(l => {
         if (l.source === 'USER') apiMessages.push({ role: 'user', content: l.text });
-        if (l.source === 'VIMO') apiMessages.push({ role: 'assistant', content: l.text });
+        if (l.source === 'VUXIO') apiMessages.push({ role: 'assistant', content: l.text });
       });
 
       if (attachment) {
@@ -161,10 +161,10 @@ export const useChat = (user: User | null, onReply: (text: string) => void, code
     }
 
     // ── 2. Mostra a resposta na UI ───────────────────────────────
-    const vimoMsg: LogMessage = {
-      id: makeId(), source: 'VIMO', text: replyText, timestamp: makeTimestamp(),
+    const VUXIOMsg: LogMessage = {
+      id: makeId(), source: 'VUXIO', text: replyText, timestamp: makeTimestamp(),
     };
-    const updatedLogs = [...currentLogs, vimoMsg];
+    const updatedLogs = [...currentLogs, VUXIOMsg];
     setLogs(updatedLogs);
     setIsLoading(false);
     onReply(replyText);
@@ -183,7 +183,7 @@ export const useChat = (user: User | null, onReply: (text: string) => void, code
         setIsLegacyChat(false);
         await Promise.all([
           addDoc(collection(db, 'chats', chatRef.id, 'messages'), { ...userMsg, createdAt: serverTimestamp() }),
-          addDoc(collection(db, 'chats', chatRef.id, 'messages'), { ...vimoMsg, createdAt: serverTimestamp() }),
+          addDoc(collection(db, 'chats', chatRef.id, 'messages'), { ...VUXIOMsg, createdAt: serverTimestamp() }),
         ]);
       } else if (isLegacyChat) {
         await updateDoc(doc(db, 'chats', currentChatId), {
@@ -193,7 +193,7 @@ export const useChat = (user: User | null, onReply: (text: string) => void, code
       } else {
         await Promise.all([
           addDoc(collection(db, 'chats', currentChatId, 'messages'), { ...userMsg, createdAt: serverTimestamp() }),
-          addDoc(collection(db, 'chats', currentChatId, 'messages'), { ...vimoMsg, createdAt: serverTimestamp() }),
+          addDoc(collection(db, 'chats', currentChatId, 'messages'), { ...VUXIOMsg, createdAt: serverTimestamp() }),
           updateDoc(doc(db, 'chats', currentChatId), { updatedAt: serverTimestamp() }),
         ]);
       }

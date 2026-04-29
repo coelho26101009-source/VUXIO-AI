@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
@@ -41,7 +41,7 @@ const DownloadButton: React.FC<{ text: string; language: string }> = ({ text, la
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `vimo_code.${ext}`;
+    a.download = `VUXIO_code.${ext}`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
