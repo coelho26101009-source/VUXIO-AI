@@ -1,4 +1,4 @@
-﻿import { useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import type { User } from 'firebase/auth';
 import {
   collection, query, where, orderBy, onSnapshot,
@@ -19,10 +19,10 @@ const GROQ_API_URL =
 // Mantém memória da conversa sem estourar o limite de tokens da Groq.
 const MAX_HISTORY_MESSAGES = 30;
 
-// Compatibilidade: mensagens antigas guardadas com source='VUXIO' ficam mapeadas para 'VUXIO'.
+// Compatibilidade: mensagens antigas no Firebase com source='HELIOS' ou 'VIMO' sao mapeadas para 'VUXIO'.
 const normalizeMessage = (m: any): LogMessage => ({
   ...m,
-  source: m.source === 'VUXIO' ? 'VUXIO' : m.source,
+  source: (m.source === 'HELIOS' || m.source === 'VIMO') ? 'VUXIO' : m.source,
 });
 
 export const useChat = (user: User | null, onReply: (text: string) => void, codeMode = false) => {

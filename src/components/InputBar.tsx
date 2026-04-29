@@ -1,4 +1,4 @@
-﻿import React, { useRef, useState, useCallback, useEffect } from 'react';
+import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { Paperclip, Send, X } from 'lucide-react';
 import type { Attachment } from '../types';
 

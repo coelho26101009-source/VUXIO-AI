@@ -1,4 +1,4 @@
-﻿export type MessageSource = 'USER' | 'VUXIO' | 'SYSTEM' | 'ERROR';
+export type MessageSource = 'USER' | 'VUXIO' | 'SYSTEM' | 'ERROR';
 
 export interface LogMessage {
   id: string;

@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { Plus, MessageSquare, LogOut, LogIn, Mic, MicOff, Trash2 } from 'lucide-react';
 import type { User } from 'firebase/auth';
 import type { Chat } from '../types';

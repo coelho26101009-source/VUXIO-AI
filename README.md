@@ -1,4 +1,4 @@
-﻿<div align="center">
+<div align="center">
 
 <img src="public/vite.svg" width="72" alt="VUXIO logo" />
 

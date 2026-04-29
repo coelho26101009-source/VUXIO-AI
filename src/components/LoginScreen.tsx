@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import { LogIn, UserCircle2 } from 'lucide-react';
 import { VuxioAvatar } from './VuxioAvatar';
 

@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { ChevronDown, Menu, Volume2, VolumeX, User, Code2 } from 'lucide-react';
 import { MarkdownMessage } from './components/MarkdownMessage';
 
