@@ -1,423 +1,189 @@
 import { useState, useCallback, useRef } from 'react';
 import type { User } from 'firebase/auth';
-import {
-  collection, query, orderBy, onSnapshot,
-  addDoc, updateDoc, setDoc, doc, serverTimestamp, getDocs, deleteDoc,
-} from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, addDoc, updateDoc, setDoc, doc, serverTimestamp, getDocs, deleteDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import type { LogMessage, Chat, Attachment, SearchSource } from '../types';
-import { CODE_MODEL, GEMINI_API_KEY, buildCodeSystemPrompt } from '../config/codeMode';
 
-// ── Firestore paths ───────────────────────────────────────────────────────────
-const userDoc  = (uid: string)              => doc(db, 'users', uid);
-const chatsCol = (uid: string)              => collection(db, 'users', uid, 'chats');
-const chatDoc  = (uid: string, cid: string) => doc(db, 'users', uid, 'chats', cid);
-const msgsCol  = (uid: string, cid: string) => collection(db, 'users', uid, 'chats', cid, 'messages');
+const MAX_HISTORY = 30;
+const userDoc = (uid: string) => doc(db, 'users', uid);
+const chatsCol = (uid: string) => collection(db, 'users', uid, 'chats');
+const chatDoc = (uid: string, chatId: string) => doc(db, 'users', uid, 'chats', chatId);
+const messagesCol = (uid: string, chatId: string) => collection(db, 'users', uid, 'chats', chatId, 'messages');
 
-// ── AI config ─────────────────────────────────────────────────────────────────
-const TEXT_MODEL    = 'llama-3.3-70b-versatile';
-const VISION_MODEL  = 'llama-3.2-11b-vision-preview';
-const GROQ_API_KEY  = (import.meta as any).env.VITE_GROQ_API_KEY  as string;
-const GROQ_API_URL  = (import.meta as any).env.VITE_GROQ_API_URL  || 'https://api.groq.com/openai/v1/chat/completions';
-const TAVILY_KEY    = (import.meta as any).env.VITE_TAVILY_API_KEY as string;
-const MAX_HISTORY   = 30;
-
-// ── Tavily web search ─────────────────────────────────────────────────────────
-const searchWeb = async (query: string): Promise<SearchSource[]> => {
-  try {
-    const res = await fetch('https://api.tavily.com/search', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        api_key:      TAVILY_KEY,
-        query,
-        search_depth: 'basic',
-        max_results:  5,
-        include_answer: false,
-      }),
-    });
-    if (!res.ok) throw new Error(`Tavily ${res.status}`);
-    const data = await res.json();
-    return (data.results ?? []).map((r: any) => ({
-      title:   r.title   as string,
-      url:     r.url     as string,
-      content: r.content as string,
-    }));
-  } catch (err) {
-    console.error('[Tavily]', err);
-    return [];
-  }
-};
-
-type ApiMsg = { role: string; content: unknown };
-
-const normalizeSource = (s: string): LogMessage['source'] =>
-  (s === 'HELIOS' || s === 'VIMO') ? 'VUXIO' : s as LogMessage['source'];
-
-const normalizeMsg = (d: Record<string, unknown>): LogMessage => ({
-  id:        (d.id        as string) ?? '',
-  source:    normalizeSource((d.source as string) ?? ''),
-  text:      (d.text      as string) ?? '',
-  timestamp: (d.timestamp as string) ?? '',
+const makeId = () => crypto.randomUUID();
+const makeTimestamp = () => new Date().toLocaleTimeString('pt-PT', { hour12: false });
+const makeMessage = (source: LogMessage['source'], text: string): LogMessage => ({ id: makeId(), source, text, timestamp: makeTimestamp() });
+const normaliseMessage = (data: Record<string, unknown>): LogMessage => ({
+  id: (data.id as string) ?? makeId(),
+  source: data.source === 'HELIOS' || data.source === 'VIMO' ? 'VUXIO' : (data.source as LogMessage['source']) ?? 'ERROR',
+  text: (data.text as string) ?? '',
+  timestamp: (data.timestamp as string) ?? '',
+  sources: data.sources as SearchSource[] | undefined,
 });
 
-// ── Groq streaming ────────────────────────────────────────────────────────────
-const streamGroq = async (
-  msgs: ApiMsg[],
-  model: string,
-  temp: number,
-  onChunk: (partial: string) => void,
-): Promise<string> => {
-  const res = await fetch(GROQ_API_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${GROQ_API_KEY}` },
-    body: JSON.stringify({ model, messages: msgs, temperature: temp, stream: true }),
+async function streamReply(
+  payload: Record<string, unknown>,
+  onChunk: (text: string) => void,
+  onSources: (sources: SearchSource[]) => void,
+): Promise<{ text: string; sources?: SearchSource[] }> {
+  const response = await fetch('/api/chat', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
   });
-  if (!res.ok) throw new Error(`Groq ${res.status}: ${res.statusText}`);
+  if (!response.ok || !response.body) {
+    const error = await response.json().catch(() => null);
+    throw new Error(error?.error || 'Não foi possível contactar o VUXIO.');
+  }
 
-  const reader  = res.body!.getReader();
+  const reader = response.body.getReader();
   const decoder = new TextDecoder();
+  let buffer = '';
   let full = '';
-
+  let sources: SearchSource[] | undefined;
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-    for (const line of decoder.decode(value, { stream: true }).split('\n')) {
-      if (!line.startsWith('data: ') || line.trim() === 'data: [DONE]') continue;
-      try {
-        const delta = (JSON.parse(line.slice(6)).choices?.[0]?.delta?.content as string) ?? '';
-        if (delta) { full += delta; onChunk(full); }
-      } catch { /* malformed chunk — skip */ }
+    buffer += decoder.decode(value, { stream: true });
+    const events = buffer.split('\n\n');
+    buffer = events.pop() ?? '';
+    for (const event of events) {
+      const type = event.match(/^event: (.+)$/m)?.[1];
+      const raw = event.match(/^data: (.+)$/m)?.[1];
+      if (!type || raw === undefined) continue;
+      const data = JSON.parse(raw);
+      if (type === 'chunk') { full += data as string; onChunk(full); }
+      if (type === 'sources') { sources = data as SearchSource[]; onSources(sources); }
+      if (type === 'error') throw new Error(data as string);
     }
   }
-  return full;
-};
+  return { text: full, sources };
+}
 
-// ── Gemini streaming ──────────────────────────────────────────────────────────
-const streamGemini = async (
-  msgs: ApiMsg[],
-  systemPrompt: string,
-  onChunk: (partial: string) => void,
-): Promise<string> => {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${CODE_MODEL}:streamGenerateContent?key=${GEMINI_API_KEY}&alt=sse`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      system_instruction: { parts: [{ text: systemPrompt }] },
-      contents: msgs.filter(m => m.role !== 'system').map(m => ({
-        role: m.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: m.content as string }],
-      })),
-      generationConfig: { temperature: 0.3 },
-    }),
-  });
-
-  if (res.status === 429 || (!res.ok && res.status >= 500)) {
-    console.warn(`Gemini ${res.status} — fallback Groq`);
-    return streamGroq(msgs, TEXT_MODEL, 0.3, onChunk);
-  }
-  if (!res.ok) throw new Error(`Gemini ${res.status}: ${res.statusText}`);
-
-  const reader  = res.body!.getReader();
-  const decoder = new TextDecoder();
-  let full = '';
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    for (const line of decoder.decode(value, { stream: true }).split('\n')) {
-      if (!line.startsWith('data: ')) continue;
-      try {
-        const text = JSON.parse(line.slice(6)).candidates?.[0]?.content?.parts?.[0]?.text as string ?? '';
-        if (text) { full += text; onChunk(full); }
-      } catch { /* skip */ }
-    }
-  }
-  return full;
-};
-
-// ── Auto-generate chat title via AI ──────────────────────────────────────────
-const generateTitle = async (firstMsg: string): Promise<string> => {
-  try {
-    const res = await fetch(GROQ_API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${GROQ_API_KEY}` },
-      body: JSON.stringify({
-        model: TEXT_MODEL,
-        messages: [
-          { role: 'system', content: 'Gera um título curtíssimo (máximo 4 palavras, sem pontuação nem aspas) para uma conversa que começa com esta mensagem. Responde APENAS com o título.' },
-          { role: 'user',   content: firstMsg.slice(0, 200) },
-        ],
-        temperature: 0.4,
-        max_tokens: 12,
-      }),
-    });
-    if (!res.ok) return firstMsg.slice(0, 40);
-    const title = ((await res.json()).choices?.[0]?.message?.content as string)?.trim();
-    return title || firstMsg.slice(0, 40);
-  } catch {
-    return firstMsg.slice(0, 40);
-  }
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-
-export const useChat = (
-  user: User | null,
-  onReply: (text: string) => void,
-  codeMode  = false,
-  webMode   = false,
-) => {
-  const [logs,          setLogs]          = useState<LogMessage[]>([]);
-  const [chatList,      setChatList]      = useState<Chat[]>([]);
+export const useChat = (user: User | null, onReply: (text: string) => void, codeMode = false, webMode = false) => {
+  const [logs, setLogs] = useState<LogMessage[]>([]);
+  const [chatList, setChatList] = useState<Chat[]>([]);
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);
-  const [isLoading,     setIsLoading]     = useState(false);
-  const [isStreaming,   setIsStreaming]   = useState(false);
-  const [isSearching,   setIsSearching]   = useState(false);
-
-  // Refs — always current values without re-creating callbacks
-  const userRef       = useRef(user);
-  const logsRef       = useRef(logs);
-  const chatIdRef     = useRef(currentChatId);
-  const codeModeRef   = useRef(codeMode);
-  const webModeRef    = useRef(webMode);
-  userRef.current     = user;
-  logsRef.current     = logs;
-  chatIdRef.current   = currentChatId;
+  const [isLoading, setIsLoading] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const userRef = useRef(user);
+  const logsRef = useRef(logs);
+  const chatIdRef = useRef(currentChatId);
+  const codeModeRef = useRef(codeMode);
+  const webModeRef = useRef(webMode);
+  userRef.current = user;
+  logsRef.current = logs;
+  chatIdRef.current = currentChatId;
   codeModeRef.current = codeMode;
-  webModeRef.current  = webMode;
+  webModeRef.current = webMode;
 
-  const makeId        = () => Math.random().toString(36).substring(2, 9);
-  const makeTimestamp = () => new Date().toLocaleTimeString('pt-PT', { hour12: false });
-  const makeMsg       = (source: LogMessage['source'], text: string): LogMessage =>
-    ({ id: makeId(), source, text, timestamp: makeTimestamp() });
-
-  // ── Core AI call (shared by sendMessage + regenerate) ─────────────────────
-  const callAI = useCallback(async (
-    history: LogMessage[],
-    userMsg: LogMessage,
-    attachment: Attachment | null,
-    userName: string,
-    onChunk: (partial: string) => void,
-    webResults?: SearchSource[],
-    isRegenerate = false,
-  ): Promise<string> => {
-    const cm = codeModeRef.current;
-
-    let systemPrompt = cm
-      ? buildCodeSystemPrompt(userName)
-      : `Tu és o VUXIO, assistente simpático criado pelo Simão. Utilizador: ${userName}. Responde em PT-PT, tom caloroso e direto. Regras: (1) Código só se pedido explicitamente. (2) Máx 5-6 linhas salvo pedido de texto longo. (3) Sem frases de enchimento. (4) Não repitas o que o utilizador disse.`;
-
-    if (isRegenerate) {
-      systemPrompt += ' IMPORTANTE: Gera uma resposta diferente da anterior — usa uma perspetiva, estrutura ou exemplos alternativos.';
-    }
-
-    if (webResults && webResults.length > 0) {
-      const ctx = webResults
-        .map((r: any, i: number) => `[${i + 1}] ${r.title}\nURL: ${r.url}\n${r.content ?? ''}`)
-        .join('\n\n');
-      systemPrompt += `\n\nRESULTADOS DA PESQUISA WEB (usa como contexto factual):\n${ctx}\n\nResponde com base nos resultados. No final inclui sempre "**Fontes:**" com os links no formato [Título](URL).`;
-    }
-
-    const apiMsgs: ApiMsg[] = [
-      { role: 'system', content: systemPrompt },
-      ...history.slice(-MAX_HISTORY).flatMap(l => {
-        if (l.source === 'USER')  return [{ role: 'user',      content: l.text }];
-        if (l.source === 'VUXIO') return [{ role: 'assistant', content: l.text }];
-        return [];
-      }),
-    ];
-
-    if (attachment) {
-      apiMsgs.push({ role: 'user', content: [
-        { type: 'text',      text: userMsg.text || 'Analisa este ficheiro.' },
-        { type: 'image_url', image_url: { url: `data:${attachment.file.type};base64,${attachment.base64}` } },
-      ]});
-    } else {
-      apiMsgs.push({ role: 'user', content: userMsg.text });
-    }
-
-    const temp = isRegenerate ? 1.0 : 0.7;
-    return cm
-      ? streamGemini(apiMsgs, systemPrompt, onChunk)
-      : streamGroq(apiMsgs, attachment ? VISION_MODEL : TEXT_MODEL, temp, onChunk);
-  }, []);
-
-  // ── Subscribe: real-time chat list ────────────────────────────────────────
   const subscribeToChats = useCallback((uid: string) => {
-    setDoc(userDoc(uid), {
-      email:       userRef.current?.email       ?? '',
-      displayName: userRef.current?.displayName ?? '',
-      lastSeen:    serverTimestamp(),
-    }, { merge: true });
-
-    const q = query(chatsCol(uid), orderBy('updatedAt', 'desc'));
-    return onSnapshot(q, snap => {
-      setChatList(snap.docs.map(d => ({
-        id:         d.id,
-        title:      (d.data().title      as string)  ?? 'Sem título',
-        isCodeMode: (d.data().isCodeMode as boolean) ?? false,
-      })));
+    void setDoc(userDoc(uid), { email: userRef.current?.email ?? '', displayName: userRef.current?.displayName ?? '', lastSeen: serverTimestamp() }, { merge: true });
+    return onSnapshot(query(chatsCol(uid), orderBy('updatedAt', 'desc')), snapshot => {
+      setChatList(snapshot.docs.map(item => ({ id: item.id, title: (item.data().title as string) ?? 'Sem título', isCodeMode: (item.data().isCodeMode as boolean) ?? false })));
     });
   }, []);
 
-  // ── Load chat ─────────────────────────────────────────────────────────────
   const loadChat = useCallback(async (chatId: string) => {
     const uid = userRef.current?.uid;
     if (!uid) return;
     setLogs([]);
     setCurrentChatId(chatId);
-    const snap = await getDocs(query(msgsCol(uid, chatId), orderBy('createdAt', 'asc')));
-    setLogs(snap.docs.map(d => normalizeMsg(d.data() as Record<string, unknown>)));
+    const snapshot = await getDocs(query(messagesCol(uid, chatId), orderBy('createdAt', 'asc')));
+    setLogs(snapshot.docs.map(item => normaliseMessage(item.data() as Record<string, unknown>)));
   }, []);
 
   const newChat = useCallback(() => { setCurrentChatId(null); setLogs([]); }, []);
 
-  // ── Delete chat + all messages ────────────────────────────────────────────
   const deleteChat = useCallback(async (chatId: string) => {
     const uid = userRef.current?.uid;
     if (!uid) return;
-    const msgs = await getDocs(msgsCol(uid, chatId));
-    await Promise.all(msgs.docs.map(d => deleteDoc(d.ref)));
+    const messages = await getDocs(messagesCol(uid, chatId));
+    await Promise.all(messages.docs.map(message => deleteDoc(message.ref)));
     await deleteDoc(chatDoc(uid, chatId));
-    if (chatIdRef.current === chatId) { setCurrentChatId(null); setLogs([]); }
+    if (chatIdRef.current === chatId) newChat();
+  }, [newChat]);
+
+  const persist = useCallback(async (userMessage: LogMessage, reply: LogMessage, isCodeMode: boolean) => {
+    const uid = userRef.current?.uid;
+    if (!uid) return;
+    let chatId = chatIdRef.current;
+    if (!chatId) {
+      const reference = await addDoc(chatsCol(uid), { title: userMessage.text.slice(0, 45) || 'Nova conversa', isCodeMode, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+      chatId = reference.id;
+      setCurrentChatId(chatId);
+    } else {
+      await updateDoc(chatDoc(uid, chatId), { updatedAt: serverTimestamp() });
+    }
+    await Promise.all([
+      addDoc(messagesCol(uid, chatId), { ...userMessage, createdAt: serverTimestamp() }),
+      addDoc(messagesCol(uid, chatId), { ...reply, createdAt: serverTimestamp() }),
+    ]);
   }, []);
 
-  // ── Send message ──────────────────────────────────────────────────────────
-  const sendMessage = useCallback(async (
-    text: string,
-    attachment: Attachment | null,
-    userName: string,
-  ) => {
-    if (isLoading) return;
-    const uid     = userRef.current?.uid ?? null;
-    const history = logsRef.current;
-
-    const userMsg      = makeMsg('USER', text || `📎 ${attachment?.file.name}`);
-    const logsWithUser = [...history, userMsg];
-
-    // Stream placeholder
-    const streamId  = makeId();
-    const timestamp = makeTimestamp();
-    const placeholder: LogMessage = { id: streamId, source: 'VUXIO', text: '', timestamp };
-
-    setLogs([...logsWithUser, placeholder]);
-    setIsLoading(true);
-
-    // ── Web search (if mode active) ─────────────────────────────────────────
-    let webResults: SearchSource[] | undefined;
-    if (webModeRef.current && text) {
-      setIsSearching(true);
-      webResults = await searchWeb(text);
+  const requestReply = useCallback(async (history: LogMessage[], userMessage: LogMessage, attachment: Attachment | null, userName: string, replaceId: string) => {
+    const mode = codeModeRef.current ? 'code' : 'standard';
+    if (webModeRef.current) setIsSearching(true);
+    try {
+      return await streamReply({
+        mode, webMode: webModeRef.current, userName,
+        messages: [...history.slice(-MAX_HISTORY), userMessage].filter(message => message.source !== 'SYSTEM' && message.source !== 'ERROR').map(message => ({ role: message.source === 'VUXIO' ? 'assistant' : 'user', content: message.text })),
+        attachment: attachment ? { base64: attachment.base64, mimeType: attachment.file.type, name: attachment.file.name } : undefined,
+      }, partial => {
+        setIsSearching(false);
+        setIsStreaming(true);
+        setLogs(previous => previous.map(message => message.id === replaceId ? { ...message, text: partial } : message));
+      }, sources => setLogs(previous => previous.map(message => message.id === replaceId ? { ...message, sources } : message)));
+    } finally {
       setIsSearching(false);
     }
+  }, []);
 
-    setIsStreaming(true);
-
-    let replyText = '';
+  const sendMessage = useCallback(async (text: string, attachment: Attachment | null, userName: string) => {
+    if (isLoading) return;
+    const history = logsRef.current;
+    const userMessage = makeMessage('USER', text || `📎 ${attachment?.file.name}`);
+    const placeholder: LogMessage = { id: makeId(), source: 'VUXIO', text: '', timestamp: makeTimestamp() };
+    setLogs([...history, userMessage, placeholder]);
+    setIsLoading(true);
     try {
-      replyText = await callAI(history, userMsg, attachment, userName, partial => {
-        setLogs(prev => prev.map(m => m.id === streamId ? { ...m, text: partial } : m));
-      }, webResults);
-    } catch (err) {
-      console.error('[VUXIO]', err);
-      const cm = codeModeRef.current;
-      setLogs([...logsWithUser, makeMsg('ERROR',
-        cm ? 'Erro ao contactar o Gemini.' : 'Falha na comunicação. Tenta novamente.'
-      )]);
-      setIsLoading(false); setIsStreaming(false);
-      return;
+      const response = await requestReply(history, userMessage, attachment, userName, placeholder.id);
+      const reply = { ...placeholder, text: response.text, sources: response.sources };
+      await persist(userMessage, reply, codeModeRef.current);
+      onReply(response.text);
+    } catch (error) {
+      setLogs(previous => previous.map(message => message.id === placeholder.id ? { ...message, source: 'ERROR', text: error instanceof Error ? error.message : 'Ocorreu um erro inesperado.' } : message));
+    } finally {
+      setIsLoading(false);
+      setIsStreaming(false);
     }
+  }, [isLoading, onReply, persist, requestReply]);
 
-    const vuxioMsg: LogMessage = { id: streamId, source: 'VUXIO', text: replyText, timestamp };
-    setIsStreaming(false);
-    setIsLoading(false);
-    onReply(replyText);
-
-    if (!uid) return;
-    try {
-      const cm  = codeModeRef.current;
-      let   cid = chatIdRef.current;
-
-      if (!cid) {
-        const titlePromise = generateTitle(text);
-        const ref = await addDoc(chatsCol(uid), {
-          title:      text.slice(0, 45) || 'Nova conversa',
-          isCodeMode: cm,
-          createdAt:  serverTimestamp(),
-          updatedAt:  serverTimestamp(),
-        });
-        cid = ref.id;
-        setCurrentChatId(cid);
-        titlePromise.then(title => updateDoc(chatDoc(uid, cid!), { title })).catch(() => {});
-      } else {
-        await updateDoc(chatDoc(uid, cid), { updatedAt: serverTimestamp() });
-      }
-
-      await Promise.all([
-        addDoc(msgsCol(uid, cid), { ...userMsg,  createdAt: serverTimestamp() }),
-        addDoc(msgsCol(uid, cid), { ...vuxioMsg, createdAt: serverTimestamp() }),
-      ]);
-    } catch (err) {
-      console.error('[Firebase]', err);
-    }
-  }, [isLoading, callAI, onReply]);
-
-  // ── Regenerate last response ──────────────────────────────────────────────
   const regenerate = useCallback(async (userName: string) => {
     if (isLoading) return;
     const current = logsRef.current;
-
-    let lastUserIdx = -1;
-    for (let i = current.length - 1; i >= 0; i--) {
-      if (current[i].source === 'USER') { lastUserIdx = i; break; }
-    }
-    if (lastUserIdx === -1) return;
-
-    const lastUserMsg = current[lastUserIdx];
-    const history     = current.slice(0, lastUserIdx);
-    const trimmed     = current.slice(0, lastUserIdx + 1);
-
-    const streamId  = makeId();
-    const timestamp = makeTimestamp();
-    const placeholder: LogMessage = { id: streamId, source: 'VUXIO', text: '', timestamp };
-
-    setLogs([...trimmed, placeholder]);
+    const index = current.map(message => message.source).lastIndexOf('USER');
+    if (index < 0) return;
+    const userMessage = current[index];
+    const history = current.slice(0, index);
+    const placeholder: LogMessage = { id: makeId(), source: 'VUXIO', text: '', timestamp: makeTimestamp() };
+    setLogs([...current.slice(0, index + 1), placeholder]);
     setIsLoading(true);
     setIsStreaming(true);
-
-    let replyText = '';
     try {
-      replyText = await callAI(history, lastUserMsg, null, userName, partial => {
-        setLogs(prev => prev.map(m => m.id === streamId ? { ...m, text: partial } : m));
-      }, undefined, true);
-    } catch (err) {
-      console.error('[VUXIO regenerate]', err);
-      setLogs(trimmed);
-      setIsLoading(false); setIsStreaming(false);
-      return;
+      const response = await requestReply(history, userMessage, null, userName, placeholder.id);
+      const reply = { ...placeholder, text: response.text, sources: response.sources };
+      const uid = userRef.current?.uid;
+      const chatId = chatIdRef.current;
+      if (uid && chatId) await Promise.all([addDoc(messagesCol(uid, chatId), { ...reply, createdAt: serverTimestamp() }), updateDoc(chatDoc(uid, chatId), { updatedAt: serverTimestamp() })]);
+      onReply(response.text);
+    } catch (error) {
+      setLogs(current);
+      console.error('[VUXIO regenerate]', error);
+    } finally {
+      setIsLoading(false);
+      setIsStreaming(false);
     }
+  }, [isLoading, onReply, requestReply]);
 
-    const vuxioMsg: LogMessage = { id: streamId, source: 'VUXIO', text: replyText, timestamp };
-    setIsStreaming(false);
-    setIsLoading(false);
-    onReply(replyText);
-
-    const uid = userRef.current?.uid;
-    const cid = chatIdRef.current;
-    if (uid && cid) {
-      try {
-        await Promise.all([
-          addDoc(msgsCol(uid, cid), { ...vuxioMsg, createdAt: serverTimestamp() }),
-          updateDoc(chatDoc(uid, cid), { updatedAt: serverTimestamp() }),
-        ]);
-      } catch (err) { console.error('[Firebase regenerate]', err); }
-    }
-  }, [isLoading, callAI, onReply]);
-
-  return {
-    logs, chatList, currentChatId, isLoading, isStreaming, isSearching,
-    sendMessage, regenerate, newChat, loadChat, deleteChat, subscribeToChats,
-  };
+  return { logs, chatList, currentChatId, isLoading, isStreaming, isSearching, sendMessage, regenerate, newChat, loadChat, deleteChat, subscribeToChats };
 };

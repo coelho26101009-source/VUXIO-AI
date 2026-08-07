@@ -72,3 +72,6 @@ desktop.ini
 # ──────────────────────────────────────────────────────────
 *.local
 tsconfig.tsbuildinfo
+
+# Local assistant settings
+.claude/

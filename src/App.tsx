@@ -1,6 +1,5 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import { ChevronDown, Menu, Volume2, VolumeX, User, Code2, Copy, Check, RefreshCw, Globe } from 'lucide-react';
-import { MarkdownMessage } from './components/MarkdownMessage';
 
 import { useAuth } from './hooks/useAuth';
 import { useChat } from './hooks/useChat';
@@ -11,6 +10,8 @@ import { Sidebar } from './components/Sidebar';
 import { VuxioAvatar } from './components/VuxioAvatar';
 import { InputBar } from './components/InputBar';
 import type { Attachment } from './types';
+
+const MarkdownMessage = lazy(() => import('./components/MarkdownMessage').then(module => ({ default: module.MarkdownMessage })));
 
 const CopyButton: React.FC<{ text: string; isCodeMode: boolean }> = ({ text, isCodeMode }) => {
   const [copied, setCopied] = useState(false);
@@ -148,8 +149,8 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (authMode === 'loading') return;
-    setIsConnected(false);
-    setTimeout(() => setIsConnected(true), 800);
+    const id = window.setTimeout(() => setIsConnected(true), 800);
+    return () => window.clearTimeout(id);
   }, [authMode]);
 
   useEffect(() => {
@@ -290,7 +291,9 @@ const App: React.FC = () => {
                             ? 'bg-green-900/10 border border-green-500/15 text-green-50'
                             : 'bg-white/5 border border-white/10 text-gray-200'
                       }`}>
-                        <MarkdownMessage text={log.text} isCodeMode={isCodeMode} />
+                        <Suspense fallback={<span className="whitespace-pre-wrap">{log.text}</span>}>
+                          <MarkdownMessage text={log.text} isCodeMode={isCodeMode} />
+                        </Suspense>
                         {isStreaming && isLastVuxio && (
                           <span className={`inline-block w-[2px] h-[1em] ml-0.5 align-middle ${isCodeMode ? 'bg-green-400' : 'bg-purple-400'}`}
                             style={{ animation: 'VUXIO-cursor 0.8s ease-in-out infinite' }} />
