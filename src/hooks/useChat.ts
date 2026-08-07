@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import type { User } from 'firebase/auth';
-import { collection, query, orderBy, onSnapshot, addDoc, updateDoc, setDoc, doc, serverTimestamp, getDocs, deleteDoc } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, addDoc, updateDoc, setDoc, doc, serverTimestamp, getDocs, deleteDoc, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import type { LogMessage, Chat, Attachment, SearchSource } from '../types';
 
@@ -164,6 +164,7 @@ export const useChat = (user: User | null, onReply: (text: string) => void, code
     const index = current.map(message => message.source).lastIndexOf('USER');
     if (index < 0) return;
     const userMessage = current[index];
+    const previousReply = current[index + 1]?.source === 'VUXIO' ? current[index + 1] : null;
     const history = current.slice(0, index);
     const placeholder: LogMessage = { id: makeId(), source: 'VUXIO', text: '', timestamp: makeTimestamp() };
     setLogs([...current.slice(0, index + 1), placeholder]);
@@ -174,7 +175,16 @@ export const useChat = (user: User | null, onReply: (text: string) => void, code
       const reply = { ...placeholder, text: response.text, sources: response.sources };
       const uid = userRef.current?.uid;
       const chatId = chatIdRef.current;
-      if (uid && chatId) await Promise.all([addDoc(messagesCol(uid, chatId), { ...reply, createdAt: serverTimestamp() }), updateDoc(chatDoc(uid, chatId), { updatedAt: serverTimestamp() })]);
+      if (uid && chatId) {
+        const previousReplies = previousReply
+          ? await getDocs(query(messagesCol(uid, chatId), where('id', '==', previousReply.id)))
+          : null;
+        await Promise.all([
+          ...(previousReplies?.docs.map(message => deleteDoc(message.ref)) ?? []),
+          addDoc(messagesCol(uid, chatId), { ...reply, createdAt: serverTimestamp() }),
+          updateDoc(chatDoc(uid, chatId), { updatedAt: serverTimestamp() }),
+        ]);
+      }
       onReply(response.text);
     } catch (error) {
       setLogs(current);

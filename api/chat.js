@@ -15,6 +15,9 @@ const clientIp = (req) => req.headers['x-forwarded-for']?.split(',')[0]?.trim() 
 
 const isRateLimited = (ip) => {
   const now = Date.now();
+  if (requests.size > 10_000) {
+    for (const [key, entry] of requests) if (now > entry.resetAt) requests.delete(key);
+  }
   const entry = requests.get(ip) ?? { count: 0, resetAt: now + 60_000 };
   if (now > entry.resetAt) {
     entry.count = 0;
@@ -44,7 +47,7 @@ const validate = (body) => {
   }
   if (body.attachment) {
     const { base64, mimeType } = body.attachment;
-    if (typeof base64 !== 'string' || typeof mimeType !== 'string' || Math.ceil(base64.length * 0.75) > MAX_ATTACHMENT_BYTES) {
+    if (typeof base64 !== 'string' || (!['application/pdf'].includes(mimeType) && !mimeType.startsWith('image/')) || Math.ceil(base64.length * 0.75) > MAX_ATTACHMENT_BYTES) {
       throw new Error('Anexo inválido ou demasiado grande.');
     }
   }
@@ -62,7 +65,7 @@ const getWebContext = async (query) => {
   return (data.results ?? []).slice(0, 5).map(({ title, url, content }) => ({ title, url, content }));
 };
 
-async function streamGroq({ messages, system, attachment, onChunk }) {
+async function streamGroq({ messages, system, attachment, onChunk, signal }) {
   if (!process.env.GROQ_API_KEY) throw new Error('O serviço de IA não está configurado.');
   if (attachment && !attachment.mimeType.startsWith('image/')) {
     throw new Error('O modo normal suporta apenas imagens. Usa o Modo Code para analisar PDFs.');
@@ -81,7 +84,7 @@ async function streamGroq({ messages, system, attachment, onChunk }) {
   const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
-    body: JSON.stringify({ model: attachment ? VISION_MODEL : TEXT_MODEL, messages: apiMessages, temperature: 0.7, stream: true }),
+    body: JSON.stringify({ model: attachment ? VISION_MODEL : TEXT_MODEL, messages: apiMessages, temperature: 0.7, stream: true }), signal,
   });
   if (!response.ok || !response.body) throw new Error('Não foi possível contactar o modelo de IA.');
   const reader = response.body.getReader();
@@ -100,8 +103,8 @@ async function streamGroq({ messages, system, attachment, onChunk }) {
   }
 }
 
-async function streamGemini({ messages, system, attachment, onChunk }) {
-  if (!process.env.GEMINI_API_KEY) return streamGroq({ messages, system, attachment, onChunk });
+async function streamGemini({ messages, system, attachment, onChunk, signal }) {
+  if (!process.env.GEMINI_API_KEY) return streamGroq({ messages, system, attachment, onChunk, signal });
   const last = messages.at(-1);
   const contents = messages.slice(0, -1).map((message) => ({ role: message.role === 'assistant' ? 'model' : 'user', parts: [{ text: message.content }] }));
   contents.push({
@@ -112,10 +115,10 @@ async function streamGemini({ messages, system, attachment, onChunk }) {
   });
   const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${CODE_MODEL}:streamGenerateContent?key=${process.env.GEMINI_API_KEY}&alt=sse`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents, generationConfig: { temperature: 0.3 } }),
+    body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents, generationConfig: { temperature: 0.3 } }), signal,
   });
   if ((response.status === 429 || response.status >= 500) && process.env.GROQ_API_KEY && (!attachment || attachment.mimeType.startsWith('image/'))) {
-    return streamGroq({ messages, system, attachment, onChunk });
+    return streamGroq({ messages, system, attachment, onChunk, signal });
   }
   if (!response.ok || !response.body) throw new Error('Não foi possível contactar o modelo de IA.');
   const reader = response.body.getReader();
@@ -138,6 +141,8 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Método não permitido.' });
   if (isRateLimited(clientIp(req))) return res.status(429).json({ error: 'Demasiados pedidos. Tenta novamente dentro de um minuto.' });
   try {
+    const controller = new AbortController();
+    res.on('close', () => controller.abort());
     const body = parseBody(req.body);
     validate(body);
     const latestMessage = body.messages.at(-1).content;
@@ -150,10 +155,11 @@ export default async function handler(req, res) {
     res.flushHeaders?.();
     if (results.length) sendEvent(res, 'sources', results.map(({ title, url }) => ({ title, url })));
     const stream = body.mode === 'code' ? streamGemini : streamGroq;
-    await stream({ messages: body.messages, system, attachment: body.attachment, onChunk: (text) => text && sendEvent(res, 'chunk', text) });
+    await stream({ messages: body.messages, system, attachment: body.attachment, signal: controller.signal, onChunk: (text) => text && sendEvent(res, 'chunk', text) });
     sendEvent(res, 'done', null);
     res.end();
   } catch (error) {
+    if (error?.name === 'AbortError') return res.end();
     if (res.headersSent) {
       sendEvent(res, 'error', error instanceof Error ? error.message : 'Ocorreu um erro inesperado.');
       return res.end();

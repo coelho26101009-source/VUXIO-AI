@@ -113,7 +113,7 @@ const VuxioSphere: React.FC<{ isConnected: boolean; isSpeaking: boolean; isCodeM
 };
 
 const App: React.FC = () => {
-  const { user, authMode, login, logout, continueAsGuest } = useAuth();
+  const { user, authMode, isAuthBusy, authError, login, logout, continueAsGuest } = useAuth();
   const { isSpeaking, isListening, speak, toggleMic } = useSpeech();
   const [isConnected, setIsConnected] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -164,7 +164,9 @@ const App: React.FC = () => {
   }, [sendMessage, user]);
 
   if (authMode === 'loading') return <div className="h-screen flex items-center justify-center bg-[#0e0e18] text-white/20 uppercase tracking-widest text-xs">A carregar...</div>;
-  if (authMode !== 'user' && authMode !== 'guest') return <LoginScreen onLogin={login} onGuest={continueAsGuest} />;
+  if (authMode !== 'user' && authMode !== 'guest') {
+    return <LoginScreen onLogin={login} onGuest={continueAsGuest} isAuthBusy={isAuthBusy} authError={authError} />;
+  }
 
   return (
     <div className={`flex h-screen overflow-hidden ${isCodeMode ? 'code-mode bg-[#080f0b]' : 'bg-[#0b0b1a]'}`}>
@@ -173,7 +175,7 @@ const App: React.FC = () => {
 
       {/* Sidebar retrátil em todos os tamanhos */}
       <div className={`fixed md:relative inset-y-0 left-0 z-50 shrink-0 transform transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0 md:block' : '-translate-x-full md:hidden'}`}>
-        <Sidebar user={user} isGuest={authMode === 'guest'} chatList={chatList} currentChatId={currentChatId} isConnected={isConnected} isSpeaking={isSpeaking} isListening={isListening} isCodeMode={isCodeMode} onNewChat={() => { newChat(); setIsSidebarOpen(false); }} onLoadChat={(id) => { loadChat(id); setIsSidebarOpen(false); }} onDeleteChat={deleteChat} onLogout={logout} onLogin={login} onToggleMic={() => toggleMic((t) => window.dispatchEvent(new CustomEvent('VUXIO-transcript', { detail: t })))} />
+        <Sidebar user={user} isGuest={authMode === 'guest'} chatList={chatList} currentChatId={currentChatId} isConnected={isConnected} isSpeaking={isSpeaking} isListening={isListening} isCodeMode={isCodeMode} onNewChat={() => { newChat(); setIsSidebarOpen(false); }} onLoadChat={(chat) => { loadChat(chat.id); setIsCodeMode(Boolean(chat.isCodeMode)); setIsWebMode(false); setIsSidebarOpen(false); }} onDeleteChat={deleteChat} onLogout={logout} onLogin={login} onToggleMic={() => toggleMic((t) => window.dispatchEvent(new CustomEvent('VUXIO-transcript', { detail: t })))} />
       </div>
 
       <div className="flex-1 flex flex-col min-w-0">
@@ -294,6 +296,16 @@ const App: React.FC = () => {
                         <Suspense fallback={<span className="whitespace-pre-wrap">{log.text}</span>}>
                           <MarkdownMessage text={log.text} isCodeMode={isCodeMode} />
                         </Suspense>
+                        {log.sources && log.sources.length > 0 && (
+                          <div className="mt-3 pt-2 border-t border-white/10 text-xs space-y-1">
+                            <p className="text-white/40 font-medium">Fontes</p>
+                            {log.sources.map(source => (
+                              <a key={source.url} href={source.url} target="_blank" rel="noopener noreferrer" className="block truncate text-cyan-400 hover:text-cyan-300 underline">
+                                {source.title || source.url}
+                              </a>
+                            ))}
+                          </div>
+                        )}
                         {isStreaming && isLastVuxio && (
                           <span className={`inline-block w-[2px] h-[1em] ml-0.5 align-middle ${isCodeMode ? 'bg-green-400' : 'bg-purple-400'}`}
                             style={{ animation: 'VUXIO-cursor 0.8s ease-in-out infinite' }} />

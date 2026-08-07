@@ -75,7 +75,7 @@ interface SidebarProps {
   isListening: boolean;
   isCodeMode?: boolean;
   onNewChat: () => void;
-  onLoadChat: (id: string) => void;
+  onLoadChat: (chat: Chat) => void;
   onDeleteChat: (id: string) => void;
   onLogout: () => void;
   onLogin: () => void;
@@ -173,7 +173,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 key={chat.id}
                 chat={chat}
                 isActive={currentChatId === chat.id}
-                onLoad={() => onLoadChat(chat.id)}
+                onLoad={() => onLoadChat(chat)}
                 onDelete={() => onDeleteChat(chat.id)}
               />
             ))}

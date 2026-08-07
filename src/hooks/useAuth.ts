@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import type { User } from 'firebase/auth';
-import { signInWithPopup, signInWithRedirect, signOut, onAuthStateChanged } from 'firebase/auth';
+import { signInWithPopup, signInWithRedirect, signOut, onAuthStateChanged, getRedirectResult } from 'firebase/auth';
 import { auth, googleProvider } from '../firebase';
 
 // 'loading'        — Firebase ainda a verificar
@@ -9,6 +9,14 @@ import { auth, googleProvider } from '../firebase';
 // 'user'           — autenticado com Google
 export type AuthMode = 'loading' | 'unauthenticated' | 'guest' | 'user';
 
+const getAuthErrorMessage = (code?: string) => {
+  if (code === 'auth/unauthorized-domain') return 'Este domínio não está autorizado no Firebase. Adiciona-o em Authentication → Settings → Authorized domains.';
+  if (code === 'auth/operation-not-allowed') return 'O login com Google ainda não está ativo no Firebase. Ativa Google em Authentication → Sign-in method.';
+  if (code === 'auth/network-request-failed') return 'Falha de rede ao iniciar sessão. Verifica a internet e tenta novamente.';
+  if (code === 'auth/popup-closed-by-user') return 'O login foi cancelado.';
+  return 'Falha ao iniciar sessão com Google. Tenta novamente.';
+};
+
 export const useAuth = () => {
   const [user, setUser]         = useState<User | null>(null);
   const [authMode, setAuthMode] = useState<AuthMode>('loading');
@@ -16,6 +24,10 @@ export const useAuth = () => {
   const [authError, setAuthError] = useState<string | null>(null);
 
   useEffect(() => {
+    void getRedirectResult(auth).catch((error: unknown) => {
+      const code = (error as { code?: string }).code;
+      setAuthError(getAuthErrorMessage(code));
+    });
     const unsub = onAuthStateChanged(auth, currentUser => {
       if (currentUser) {
         // Utilizador autenticado com Google
@@ -46,29 +58,19 @@ export const useAuth = () => {
       const code = err?.code;
 
       // Popup bloqueado/fechado/cancelado: tenta redirect (mais fiável)
-      if (
-        code === 'auth/popup-blocked' ||
-        code === 'auth/popup-closed-by-user' ||
-        code === 'auth/cancelled-popup-request'
-      ) {
+      if (code === 'auth/popup-blocked') {
         try {
           await signInWithRedirect(auth, googleProvider);
           return;
         } catch (redirectError) {
           console.error('Erro no login por redirect:', redirectError);
-          setAuthError('Não foi possível abrir o login. Verifica permissões do browser e tenta novamente.');
+          setAuthError(getAuthErrorMessage((redirectError as { code?: string }).code));
           return;
         }
       }
 
-      if (code === 'auth/unauthorized-domain') {
-        setAuthError('Domínio não autorizado no Firebase Auth. Tens de adicionar este domínio em Authentication → Settings → Authorized domains.');
-      } else if (code === 'auth/network-request-failed') {
-        setAuthError('Falha de rede ao iniciar sessão. Verifica a internet e tenta novamente.');
-      } else {
-        setAuthError('Falha ao iniciar sessão com Google. Tenta novamente.');
-        console.error('Erro ao fazer login:', error);
-      }
+      setAuthError(getAuthErrorMessage(code));
+      if (code !== 'auth/popup-closed-by-user') console.error('Erro ao fazer login:', error);
     } finally {
       setIsAuthBusy(false);
     }
