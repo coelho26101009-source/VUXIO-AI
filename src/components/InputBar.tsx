@@ -50,12 +50,16 @@ export const InputBar: React.FC<InputBarProps> = ({ onSend, isLoading, isConnect
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      alert('Ficheiro demasiado grande. Máximo: 5MB.');
+    if (file.size > 3 * 1024 * 1024) {
+      alert('Ficheiro demasiado grande. Máximo: 3MB.');
       if (fileRef.current) fileRef.current.value = '';
       return;
     }
     const reader = new FileReader();
+    reader.onerror = () => {
+      alert('Não foi possível ler o ficheiro. Tenta novamente.');
+      setAttachment(null);
+    };
     reader.onload = ev => {
       const base64 = (ev.target?.result as string).split(',')[1];
       setAttachment({ file, base64 });
@@ -143,7 +147,13 @@ export const InputBar: React.FC<InputBarProps> = ({ onSend, isLoading, isConnect
         Enter para enviar · Shift+Enter para nova linha
       </p>
 
-      <input ref={fileRef} type="file" accept="image/*,application/pdf" onChange={handleFile} className="hidden" />
+      <input
+        ref={fileRef}
+        type="file"
+        accept={isCodeMode ? 'image/*,application/pdf' : 'image/*'}
+        onChange={handleFile}
+        className="hidden"
+      />
     </div>
   );
 };

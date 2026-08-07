@@ -3,6 +3,7 @@ export type MessageSource = 'USER' | 'VUXIO' | 'SYSTEM' | 'ERROR';
 export interface SearchSource {
   title: string;
   url: string;
+  content?: string;
 }
 
 export interface LogMessage {
