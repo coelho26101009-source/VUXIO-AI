@@ -184,13 +184,21 @@ async function streamGroq({ messages, system, attachment, onChunk, onFile, signa
         : last.content,
     },
   ];
-  const requestBody = { model: attachment ? VISION_MODEL : textModel, messages: apiMessages, temperature: 0.7, stream: true };
+  const model = attachment ? VISION_MODEL : textModel;
+  const requestBody = { model, messages: apiMessages, temperature: 0.7, stream: true };
   // Not offered alongside an attachment: the vision model is a separate,
   // narrower model from the one tools were designed against, and mixing
   // multimodal input with tool-calling is exactly the kind of combination
   // worth not assuming works rather than actually needing right now --
   // nothing today asks for both at once.
-  if (tools && !attachment) requestBody.tools = tools;
+  //
+  // Not offered to groq/compound either: Groq's own docs (console.groq.com/docs/compound)
+  // state custom user-defined tools aren't supported by compound systems, only their
+  // fixed built-in ones -- sending `tools` to it doesn't get ignored, it 400s the whole
+  // request. Code Mode's create_file requests fall back to a plain text reply until
+  // Code Mode moves off compound (loses agentic code execution) or gets its own
+  // non-compound model for file requests.
+  if (tools && !attachment && model !== CODE_FALLBACK_MODEL) requestBody.tools = tools;
   const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
