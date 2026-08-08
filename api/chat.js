@@ -16,9 +16,6 @@ const CODE_FALLBACK_MODEL = TEXT_MODEL;
 // Referenced only by the tools guard in streamGroq below -- kept as its own
 // constant since it's no longer the same value as CODE_FALLBACK_MODEL.
 const COMPOUND_MODEL = 'groq/compound';
-// gemini-2.0-flash was shut down by Google; 2.5 Pro is their current model
-// aimed at code and deep reasoning.
-const CODE_MODEL = 'gemini-2.5-pro';
 // Available in every mode (used to be Code/Web only, see the fileToolNote comment
 // below for why that turned out wrong).
 const TOOLS = [{
@@ -251,46 +248,6 @@ async function streamGroq({ messages, system, attachment, onChunk, onFile, signa
       // something it would try to save as a nameless, empty download.
       if (filename && content != null) onFile(filename, content);
     } catch { /* malformed tool-call arguments -- drop it, the reply text still sent */ }
-  }
-}
-
-async function streamGemini({ messages, system, attachment, onChunk, signal }) {
-  const groqFallback = () => streamGroq({ messages, system, attachment, onChunk, signal, textModel: CODE_FALLBACK_MODEL });
-  if (!process.env.GEMINI_API_KEY) return groqFallback();
-  const last = messages.at(-1);
-  const contents = messages.slice(0, -1).map((message) => ({ role: message.role === 'assistant' ? 'model' : 'user', parts: [{ text: message.content }] }));
-  contents.push({
-    role: 'user',
-    parts: attachment
-      ? [{ text: last.content || 'Analisa este ficheiro.' }, { inlineData: { mimeType: attachment.mimeType, data: attachment.base64 } }]
-      : [{ text: last.content }],
-  });
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${CODE_MODEL}:streamGenerateContent?key=${process.env.GEMINI_API_KEY}&alt=sse`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents, generationConfig: { temperature: 0.3 } }), signal,
-  });
-  // Any failure Groq could serve instead falls back, not just 429/5xx. A model
-  // that Google has retired answers 404, and the old condition let that through
-  // to the throw below -- so when gemini-2.0-flash was shut down, Code Mode
-  // broke outright even though a healthy Groq key was sitting right there.
-  // PDFs are the one thing Groq cannot take over, so they still surface.
-  if (!response.ok && process.env.GROQ_API_KEY && (!attachment || attachment.mimeType.startsWith('image/'))) {
-    return groqFallback();
-  }
-  if (!response.ok || !response.body) throw new Error('Não foi possível contactar o modelo de IA.');
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() ?? '';
-    for (const line of lines) {
-      if (!line.startsWith('data: ')) continue;
-      try { onChunk(JSON.parse(line.slice(6)).candidates?.[0]?.content?.parts?.[0]?.text ?? ''); } catch { /* ignore malformed SSE */ }
-    }
   }
 }
 

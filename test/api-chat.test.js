@@ -99,37 +99,18 @@ test('web mode authenticates to Tavily with a Bearer header, not a body key', as
   assert.equal(JSON.parse(tavily.options.body).api_key, undefined);
 });
 
-test('code mode falls back to Groq when Gemini rejects the request', async () => {
-  const calls = [];
-  const realFetch = globalThis.fetch;
-  const realGroqKey = process.env.GROQ_API_KEY;
-  const realGeminiKey = process.env.GEMINI_API_KEY;
-
-  process.env.GROQ_API_KEY = 'test-groq-key';
-  process.env.GEMINI_API_KEY = 'test-gemini-key';
-
-  globalThis.fetch = async (url, options) => {
-    calls.push({ url: String(url), options });
-    // 404 is what Google answers for a model it has retired -- the case the
-    // old `status === 429 || status >= 500` condition let through to a throw.
-    if (String(url).includes('googleapis')) return { ok: false, status: 404, body: null };
-    return { ok: true, status: 200, body: groqStream() };
-  };
-
-  try {
-    await handler(
-      { method: 'POST', headers: { 'x-forwarded-for': '10.0.0.3' }, body: { ...chat, mode: 'code' } },
-      response(),
-    );
-  } finally {
-    globalThis.fetch = realFetch;
-    if (realGroqKey === undefined) delete process.env.GROQ_API_KEY; else process.env.GROQ_API_KEY = realGroqKey;
-    if (realGeminiKey === undefined) delete process.env.GEMINI_API_KEY; else process.env.GEMINI_API_KEY = realGeminiKey;
-  }
-
+test('code mode uses a model that actually supports custom tools', async () => {
+  const calls = await runWithStubbedFetch({ ...chat, mode: 'code' }, '10.0.0.3');
   const groq = calls.find((call) => call.url.includes('api.groq.com'));
-  assert.ok(groq, 'a 404 from Gemini should fall back to Groq, not fail the request');
-  assert.equal(JSON.parse(groq.options.body).model, 'groq/compound');
+  assert.ok(groq, 'expected a request to Groq');
+
+  const body = JSON.parse(groq.options.body);
+  // groq/compound rejects any request carrying custom tools outright (400,
+  // not a silent ignore) -- Code Mode used to default to it and every
+  // create_file request there failed the whole completion, not just the
+  // tool call. Guards against reintroducing that pairing.
+  assert.notEqual(body.model, 'groq/compound');
+  assert.ok(body.tools, 'expected create_file to be offered in Code Mode');
 });
 
 // --- <think> filtering -------------------------------------------------
