@@ -10,6 +10,25 @@ const CODE_FALLBACK_MODEL = 'groq/compound';
 // gemini-2.0-flash was shut down by Google; 2.5 Pro is their current model
 // aimed at code and deep reasoning.
 const CODE_MODEL = 'gemini-2.5-pro';
+// Only offered in Code Mode and Web Mode -- Standard mode has no use for a
+// file-download tool, and every extra tool is one more thing the model can
+// call by mistake instead of just answering.
+const TOOLS = [{
+  type: 'function',
+  function: {
+    name: 'create_file',
+    description: 'Creates a downloadable file for the user. Use for generated code, a document, data, or any content meant to be saved rather than just read in the chat reply.',
+    parameters: {
+      type: 'object',
+      properties: {
+        filename: { type: 'string', description: 'File name including extension, e.g. script.py' },
+        content: { type: 'string', description: 'The full file content' },
+      },
+      required: ['filename', 'content'],
+    },
+  },
+}];
+
 const MAX_MESSAGES = 31;
 const MAX_MESSAGE_LENGTH = 12_000;
 // Vercel's serverless request limit is 4.5 MB; leave room for JSON overhead.
@@ -146,7 +165,7 @@ const getWebContext = async (query) => {
   return (data.results ?? []).slice(0, 5).map(({ title, url, content }) => ({ title, url, content }));
 };
 
-async function streamGroq({ messages, system, attachment, onChunk, signal, textModel = TEXT_MODEL }) {
+async function streamGroq({ messages, system, attachment, onChunk, onFile, signal, textModel = TEXT_MODEL, tools }) {
   if (!process.env.GROQ_API_KEY) throw new Error('O serviço de IA não está configurado.');
   if (attachment && !attachment.mimeType.startsWith('image/')) {
     throw new Error('O modo normal suporta apenas imagens. Usa o Modo Code para analisar PDFs.');
@@ -162,16 +181,27 @@ async function streamGroq({ messages, system, attachment, onChunk, signal, textM
         : last.content,
     },
   ];
+  const requestBody = { model: attachment ? VISION_MODEL : textModel, messages: apiMessages, temperature: 0.7, stream: true };
+  // Not offered alongside an attachment: the vision model is a separate,
+  // narrower model from the one tools were designed against, and mixing
+  // multimodal input with tool-calling is exactly the kind of combination
+  // worth not assuming works rather than actually needing right now --
+  // nothing today asks for both at once.
+  if (tools && !attachment) requestBody.tools = tools;
   const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
-    body: JSON.stringify({ model: attachment ? VISION_MODEL : textModel, messages: apiMessages, temperature: 0.7, stream: true }), signal,
+    body: JSON.stringify(requestBody), signal,
   });
   if (!response.ok || !response.body) throw new Error('Não foi possível contactar o modelo de IA.');
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   const think = createThinkFilter();
   let buffer = '';
+  // Streamed tool calls arrive as fragments keyed by index -- name in the
+  // first fragment, arguments accumulated in pieces across many more -- so
+  // nothing is usable until the stream actually ends.
+  const toolCalls = {};
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -181,11 +211,27 @@ async function streamGroq({ messages, system, attachment, onChunk, signal, textM
     for (const line of lines) {
       if (!line.startsWith('data: ') || line.trim() === 'data: [DONE]') continue;
       try {
-        onChunk(think.push(JSON.parse(line.slice(6)).choices?.[0]?.delta?.content ?? ''));
+        const delta = JSON.parse(line.slice(6)).choices?.[0]?.delta ?? {};
+        if (delta.content) onChunk(think.push(delta.content));
+        for (const call of delta.tool_calls ?? []) {
+          const slot = (toolCalls[call.index] ??= { name: '', arguments: '' });
+          if (call.function?.name) slot.name = call.function.name;
+          if (call.function?.arguments) slot.arguments += call.function.arguments;
+        }
       } catch { /* ignore malformed SSE */ }
     }
   }
   onChunk(think.flush());
+  for (const call of Object.values(toolCalls)) {
+    if (call.name !== 'create_file' || !onFile) continue;
+    try {
+      const { filename, content } = JSON.parse(call.arguments);
+      // A tool call with an empty filename or missing content is a malformed
+      // call, not a real file -- skip it rather than hand the frontend
+      // something it would try to save as a nameless, empty download.
+      if (filename && content != null) onFile(filename, content);
+    } catch { /* malformed tool-call arguments -- drop it, the reply text still sent */ }
+  }
 }
 
 async function streamGemini({ messages, system, attachment, onChunk, signal }) {
@@ -248,10 +294,13 @@ export default async function handler(req, res) {
     // Gemini used to be primary for Code Mode with a Groq fallback on failure; flipped
     // because Gemini was the unreliable link (model deprecations, unpredictable 404/5xx).
     // Groq direct for both modes now, code mode still gets its own model.
+    const toolsEnabled = body.mode === 'code' || body.webMode;
     await streamGroq({
       messages: body.messages, system, attachment: body.attachment, signal: controller.signal,
       textModel: body.mode === 'code' ? CODE_FALLBACK_MODEL : TEXT_MODEL,
+      tools: toolsEnabled ? TOOLS : undefined,
       onChunk: (text) => text && sendEvent(res, 'chunk', text),
+      onFile: (filename, content) => sendEvent(res, 'file', { filename, content }),
     });
     sendEvent(res, 'done', null);
     res.end();

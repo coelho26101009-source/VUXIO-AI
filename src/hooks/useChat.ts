@@ -21,6 +21,18 @@ const normaliseMessage = (data: Record<string, unknown>): LogMessage => ({
   sources: data.sources as SearchSource[] | undefined,
 });
 
+// Triggers a real browser download via a throwaway object URL -- revoked
+// right after the click, since the anchor never needs it again once the
+// download has started.
+function downloadFile(filename: string, content: string) {
+  const url = URL.createObjectURL(new Blob([content], { type: 'text/plain' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 async function streamReply(
   payload: Record<string, unknown>,
   onChunk: (text: string) => void,
@@ -52,6 +64,7 @@ async function streamReply(
       const data = JSON.parse(raw);
       if (type === 'chunk') { full += data as string; onChunk(full); }
       if (type === 'sources') { sources = data as SearchSource[]; onSources(sources); }
+      if (type === 'file') { const file = data as { filename: string; content: string }; downloadFile(file.filename, file.content); }
       if (type === 'error') throw new Error(data as string);
     }
   }
