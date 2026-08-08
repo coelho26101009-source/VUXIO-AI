@@ -4,9 +4,18 @@
 // vision docs currently document for image input.
 const TEXT_MODEL = 'openai/gpt-oss-120b';
 const VISION_MODEL = 'qwen/qwen3.6-27b';
-// Code Mode's Groq fallback. compound is agentic (built-in code execution),
-// which suits Code Mode better than the plain text model does.
-const CODE_FALLBACK_MODEL = 'groq/compound';
+// Code Mode's model used to be groq/compound for its agentic built-in code
+// execution, but compound categorically rejects requests carrying custom
+// tools (see the streamGroq comment near requestBody.tools) -- every
+// create_file request in Code Mode 400'd the whole completion, not just the
+// tool call. Reusing TEXT_MODEL instead: same model Standard mode already
+// uses successfully with create_file, and Groq's own docs confirm gpt-oss-120b
+// has native tool-calling support plus near-parity with o4-mini on reasoning
+// and solid SWE-bench/coding results -- a real model swap, not a downgrade.
+const CODE_FALLBACK_MODEL = TEXT_MODEL;
+// Referenced only by the tools guard in streamGroq below -- kept as its own
+// constant since it's no longer the same value as CODE_FALLBACK_MODEL.
+const COMPOUND_MODEL = 'groq/compound';
 // gemini-2.0-flash was shut down by Google; 2.5 Pro is their current model
 // aimed at code and deep reasoning.
 const CODE_MODEL = 'gemini-2.5-pro';
@@ -195,10 +204,10 @@ async function streamGroq({ messages, system, attachment, onChunk, onFile, signa
   // Not offered to groq/compound either: Groq's own docs (console.groq.com/docs/compound)
   // state custom user-defined tools aren't supported by compound systems, only their
   // fixed built-in ones -- sending `tools` to it doesn't get ignored, it 400s the whole
-  // request. Code Mode's create_file requests fall back to a plain text reply until
-  // Code Mode moves off compound (loses agentic code execution) or gets its own
-  // non-compound model for file requests.
-  if (tools && !attachment && model !== CODE_FALLBACK_MODEL) requestBody.tools = tools;
+  // request. Nothing currently routes here (Code Mode moved off compound to
+  // CODE_FALLBACK_MODEL = TEXT_MODEL specifically over this), but the guard stays in
+  // case compound is ever wired back in for something else.
+  if (tools && !attachment && model !== COMPOUND_MODEL) requestBody.tools = tools;
   const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
