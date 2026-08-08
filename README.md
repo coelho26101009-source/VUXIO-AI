@@ -25,8 +25,8 @@ VUXIO is a full-stack AI chat application that combines a beautiful, fluid inter
 
 It ships with three distinct operating modes:
 
-- **Standard Mode** — Warm, conversational assistant powered by LLaMA 3.3 70B via Groq
-- **Code Mode** — Dedicated developer environment with Google Gemini 2.0 Flash, green theme, and full technical responses
+- **Standard Mode** — Warm, conversational assistant powered by GPT-OSS 120B via Groq
+- **Code Mode** — Dedicated developer environment with Google Gemini 2.5 Pro, green theme, and full technical responses
 - **Web Mode** — Real-time web search via Tavily, injecting current information into every AI response
 
 ---
@@ -47,9 +47,9 @@ It ships with three distinct operating modes:
 ### Modes
 | Mode | Trigger | Model | Theme |
 |---|---|---|---|
-| **Standard** | Default | LLaMA 3.3 70B (Groq) | Purple |
-| **Code Mode** | `MOD CODE` button | Gemini 2.0 Flash → Groq fallback | Green |
-| **Web Mode** | `WEB` button | LLaMA 3.3 70B + Tavily results | Cyan |
+| **Standard** | Default | GPT-OSS 120B (Groq) | Purple |
+| **Code Mode** | `MOD CODE` button | Gemini 2.5 Pro → Groq Compound fallback | Green |
+| **Web Mode** | `WEB` button | GPT-OSS 120B + Tavily results | Cyan |
 
 ### Auth & Persistence
 | Feature | Details |
@@ -86,8 +86,8 @@ It ships with three distinct operating modes:
 - **[React Markdown](https://github.com/remarkjs/react-markdown)** + **[react-syntax-highlighter](https://github.com/react-syntax-highlighter/react-syntax-highlighter)** — rich message rendering
 
 ### AI & APIs
-- **[Groq API](https://groq.com)** — ultra-fast inference for LLaMA 3.3 70B (text) and LLaMA 3.2 11B Vision
-- **[Google Gemini 2.0 Flash](https://deepmind.google/technologies/gemini/)** — Code Mode primary model, with automatic Groq fallback on 429/5xx
+- **[Groq API](https://groq.com)** — ultra-fast inference for GPT-OSS 120B (text), Qwen 3.6 27B (vision), and Compound (agentic Code Mode fallback)
+- **[Google Gemini 2.5 Pro](https://deepmind.google/technologies/gemini/)** — Code Mode primary model, with automatic Groq fallback on any error Groq can serve instead
 - **[Tavily Search API](https://tavily.com)** — real-time web search for grounded AI responses
 
 ### Backend / Infrastructure
@@ -117,7 +117,7 @@ vuxio-ai/
 │   │   └── VuxioAvatar.tsx    # Animated avatar — connects, pulses, changes per mode
 │   │
 │   ├── config/
-│   │   └── codeMode.ts        # Code Mode config — Gemini model, system prompt builder
+│   │   └── codeMode.ts        # UNUSED — superseded by api/chat.js (see Known issues)
 │   │
 │   ├── hooks/
 │   │   ├── useAuth.ts         # Firebase Auth — Google login, guest mode, auth state
@@ -252,7 +252,7 @@ When regenerating, VUXIO strips the last AI response from the history, re-sends 
 When Web Mode is active, the server searches Tavily (up to five results), injects the result snippets into the prompt, and returns source metadata to the client. The AI is instructed to cite sources using `[Title](URL)` markdown links.
 
 ### Code Mode Fallback
-Gemini 2.0 Flash is the primary Code Mode model. On `429 Too Many Requests` or any `5xx` server error, VUXIO automatically falls back to Groq (LLaMA 3.3 70B) with the same message history, with no visible interruption to the user.
+Gemini 2.5 Pro is the primary Code Mode model. On **any** error response Groq is able to serve instead, VUXIO falls back to Groq Compound with the same message history and no visible interruption. The condition is deliberately broad: it previously covered only `429` and `5xx`, so when a model was retired and Google began answering `404`, Code Mode failed outright instead of falling back. PDFs are the one case that still surfaces the error, since Groq cannot accept them.
 
 ---
 
@@ -263,6 +263,52 @@ Gemini 2.0 Flash is the primary Code Mode model. On `429 Too Many Requests` or a
 - [ ] Conversation export (Markdown / JSON)
 - [ ] Image generation mode
 - [ ] Shareable conversation links
+
+---
+
+## Models and tools in use
+
+Every model ID below was checked against its provider's own current
+documentation, not carried over from an earlier version. Provider model IDs
+get retired without the calling code changing, and a retired ID fails only at
+runtime — see *Known issues* for three that had already broken this way.
+
+| Where | ID | Why this one |
+|---|---|---|
+| Standard Mode (text) | `openai/gpt-oss-120b` | Groq production model, 500 T/sec |
+| Vision (image upload) | `qwen/qwen3.6-27b` | The model Groq's vision docs currently document for image input |
+| Code Mode (primary) | `gemini-2.5-pro` | Google's current model aimed at deep reasoning and code |
+| Code Mode (fallback) | `groq/compound` | Agentic — built-in code execution, which suits Code Mode |
+| Web search | Tavily `/search` | Up to five results, injected as prompt context with sources returned to the client |
+
+**Groq Compound** is an agentic system rather than a plain text model: it can
+run code and search the web on its own, which is why it backs Code Mode rather
+than the general chat path.
+
+Provider limits worth knowing, from their docs: Groq vision accepts a maximum
+of **5 images** and **20 MB** per request. This app is stricter — a single
+attachment, capped at **3 MB**, because Vercel's serverless request limit is
+4.5 MB and the base64 encoding plus JSON overhead has to fit inside it.
+
+---
+
+## Known issues
+
+- **`src/config/codeMode.ts` is dead code.** Neither `CODE_MODEL` nor
+  `buildCodeSystemPrompt` is imported anywhere — both were superseded when the
+  prompts and model selection moved server-side into `api/chat.js`. It is left
+  in place rather than deleted, but it is not what runs, and it should not be
+  edited expecting an effect.
+- **The rate limiter is per-instance.** `api/chat.js` keeps its counters in a
+  module-level `Map`, so each serverless instance counts separately and a cold
+  start resets them. Fine as abuse dampening; it is not a global quota.
+
+---
+
+## Contributors
+
+- **[Simão (@coelho26101009-source)](https://github.com/coelho26101009-source)** — creator and author of VUXIO AI
+- **[@otzpt](https://github.com/otzpt)** — model migration off decommissioned providers, Tavily auth fix, Code Mode fallback fix, regression tests
 
 ---
 
