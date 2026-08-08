@@ -10,9 +10,8 @@ const CODE_FALLBACK_MODEL = 'groq/compound';
 // gemini-2.0-flash was shut down by Google; 2.5 Pro is their current model
 // aimed at code and deep reasoning.
 const CODE_MODEL = 'gemini-2.5-pro';
-// Only offered in Code Mode and Web Mode -- Standard mode has no use for a
-// file-download tool, and every extra tool is one more thing the model can
-// call by mistake instead of just answering.
+// Available in every mode (used to be Code/Web only, see the fileToolNote comment
+// below for why that turned out wrong).
 const TOOLS = [{
   type: 'function',
   function: {
@@ -56,10 +55,14 @@ const isRateLimited = (ip) => {
   return entry.count > 15;
 };
 
-const codePrompt = (userName) => `Tu és o VUXIO em modo PROGRAMADOR. Utilizador: ${userName}.
-Responde sempre em PT-PT, de forma direta e técnica. Só escreves código quando o utilizador pedir explicitamente. Quando escreveres código, torna-o completo e executável. Aponta a causa raiz dos erros e pede esclarecimento quando a pergunta for ambígua.`;
+// Both prompts mirror the user's language instead of forcing PT-PT: a user typing in
+// English was still getting Portuguese replies regardless of what they wrote.
+const LANGUAGE_RULE = 'Responde sempre no mesmo idioma que o utilizador usar na mensagem mais recente (inglês, português, espanhol, etc. -- adapta-te automaticamente). Usa PT-PT apenas quando o idioma não for claro pelo contexto.';
 
-const standardPrompt = (userName) => `Tu és o VUXIO, um assistente simpático criado pelo Simão. Utilizador: ${userName}. Responde em PT-PT, num tom caloroso e direto. Código só se pedido explicitamente. Mantém a resposta curta, salvo pedido de detalhe.`;
+const codePrompt = (userName) => `Tu és o VUXIO em modo PROGRAMADOR. Utilizador: ${userName}.
+${LANGUAGE_RULE} Sê direto e técnico. Só escreves código quando o utilizador pedir explicitamente. Quando escreveres código, torna-o completo e executável. Aponta a causa raiz dos erros e pede esclarecimento quando a pergunta for ambígua.`;
+
+const standardPrompt = (userName) => `Tu és o VUXIO, um assistente simpático criado pelo Simão. Utilizador: ${userName}. ${LANGUAGE_RULE} Tom caloroso e direto. Código só se pedido explicitamente. Mantém a resposta curta, salvo pedido de detalhe.`;
 
 const parseBody = (body) => typeof body === 'string' ? JSON.parse(body) : body;
 
@@ -288,13 +291,13 @@ export default async function handler(req, res) {
     // Gemini used to be primary for Code Mode with a Groq fallback on failure; flipped
     // because Gemini was the unreliable link (model deprecations, unpredictable 404/5xx).
     // Groq direct for both modes now, code mode still gets its own model.
-    const toolsEnabled = body.mode === 'code' || body.webMode;
-    // Without this, the model would sometimes describe manual save steps ("abre o
-    // Bloco de Notas...") instead of calling create_file -- the tool's own
-    // description wasn't enough on its own to make it prefer calling it every time.
-    const fileToolNote = toolsEnabled
-      ? '\n\nSe o utilizador pedir um ficheiro para descarregar, usa sempre a tool create_file assim que o conteúdo estiver definido. Nunca expliques passos manuais (abrir o Bloco de Notas, colar texto, guardar como) em vez de criares o ficheiro diretamente.'
-      : '';
+    //
+    // create_file used to be gated to Code Mode / Web Mode only, on the assumption
+    // Standard mode had no use for it. Real usage showed otherwise -- "create a
+    // hello world c file" typed in plain Standard-mode chat got a code block and a
+    // manual "open Notepad, paste this" walkthrough instead of a real file, twice,
+    // even after asking again. Available in every mode now.
+    const fileToolNote = '\n\nSe o utilizador pedir um ficheiro (para descarregar, guardar, ou "criar um ficheiro"), usa sempre a tool create_file assim que o conteúdo estiver definido -- mesmo que a mensagem seja curta como "create a file". Nunca expliques passos manuais (abrir o Bloco de Notas / Notepad, colar texto, guardar como) em vez de criares o ficheiro diretamente.';
     const system = (body.mode === 'code' ? codePrompt(body.userName || 'Utilizador') : standardPrompt(body.userName || 'Utilizador')) + webContext + fileToolNote;
     res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache, no-transform');
@@ -304,7 +307,7 @@ export default async function handler(req, res) {
     await streamGroq({
       messages: body.messages, system, attachment: body.attachment, signal: controller.signal,
       textModel: body.mode === 'code' ? CODE_FALLBACK_MODEL : TEXT_MODEL,
-      tools: toolsEnabled ? TOOLS : undefined,
+      tools: TOOLS,
       onChunk: (text) => text && sendEvent(res, 'chunk', text),
       onFile: (filename, content) => sendEvent(res, 'file', { filename, content }),
     });
