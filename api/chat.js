@@ -17,7 +17,7 @@ const TOOLS = [{
   type: 'function',
   function: {
     name: 'create_file',
-    description: 'Creates a downloadable file for the user. Use for generated code, a document, data, or any content meant to be saved rather than just read in the chat reply.',
+    description: 'Creates a downloadable file and delivers it directly in the chat as a download link. Call this immediately once the file content is decided -- never describe manual steps (e.g. "open Notepad, paste this, save as x.txt") as a substitute for calling it. Use for generated code, a document, data, or any content meant to be saved rather than just read in the chat reply.',
     parameters: {
       type: 'object',
       properties: {
@@ -285,16 +285,22 @@ export default async function handler(req, res) {
     const latestMessage = body.messages.at(-1).content;
     const results = body.webMode ? await getWebContext(latestMessage) : [];
     const webContext = results.length ? `\n\nResultados de pesquisa web:\n${results.map((r, i) => `[${i + 1}] ${r.title}\n${r.url}\n${r.content}`).join('\n\n')}\nUsa-os como contexto factual e inclui fontes em Markdown.` : '';
-    const system = (body.mode === 'code' ? codePrompt(body.userName || 'Utilizador') : standardPrompt(body.userName || 'Utilizador')) + webContext;
+    // Gemini used to be primary for Code Mode with a Groq fallback on failure; flipped
+    // because Gemini was the unreliable link (model deprecations, unpredictable 404/5xx).
+    // Groq direct for both modes now, code mode still gets its own model.
+    const toolsEnabled = body.mode === 'code' || body.webMode;
+    // Without this, the model would sometimes describe manual save steps ("abre o
+    // Bloco de Notas...") instead of calling create_file -- the tool's own
+    // description wasn't enough on its own to make it prefer calling it every time.
+    const fileToolNote = toolsEnabled
+      ? '\n\nSe o utilizador pedir um ficheiro para descarregar, usa sempre a tool create_file assim que o conteúdo estiver definido. Nunca expliques passos manuais (abrir o Bloco de Notas, colar texto, guardar como) em vez de criares o ficheiro diretamente.'
+      : '';
+    const system = (body.mode === 'code' ? codePrompt(body.userName || 'Utilizador') : standardPrompt(body.userName || 'Utilizador')) + webContext + fileToolNote;
     res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders?.();
     if (results.length) sendEvent(res, 'sources', results.map(({ title, url }) => ({ title, url })));
-    // Gemini used to be primary for Code Mode with a Groq fallback on failure; flipped
-    // because Gemini was the unreliable link (model deprecations, unpredictable 404/5xx).
-    // Groq direct for both modes now, code mode still gets its own model.
-    const toolsEnabled = body.mode === 'code' || body.webMode;
     await streamGroq({
       messages: body.messages, system, attachment: body.attachment, signal: controller.signal,
       textModel: body.mode === 'code' ? CODE_FALLBACK_MODEL : TEXT_MODEL,

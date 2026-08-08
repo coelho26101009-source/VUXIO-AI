@@ -2,7 +2,7 @@ import { useState, useCallback, useRef } from 'react';
 import type { User } from 'firebase/auth';
 import { collection, query, orderBy, onSnapshot, addDoc, updateDoc, setDoc, doc, serverTimestamp, getDocs, deleteDoc, where } from 'firebase/firestore';
 import { db } from '../firebase';
-import type { LogMessage, Chat, Attachment, SearchSource } from '../types';
+import type { LogMessage, Chat, Attachment, SearchSource, GeneratedFile } from '../types';
 
 const MAX_HISTORY = 30;
 const userDoc = (uid: string) => doc(db, 'users', uid);
@@ -19,12 +19,13 @@ const normaliseMessage = (data: Record<string, unknown>): LogMessage => ({
   text: (data.text as string) ?? '',
   timestamp: (data.timestamp as string) ?? '',
   sources: data.sources as SearchSource[] | undefined,
+  file: data.file as GeneratedFile | undefined,
 });
 
 // Triggers a real browser download via a throwaway object URL -- revoked
 // right after the click, since the anchor never needs it again once the
 // download has started.
-function downloadFile(filename: string, content: string) {
+export function downloadFile(filename: string, content: string) {
   const url = URL.createObjectURL(new Blob([content], { type: 'text/plain' }));
   const link = document.createElement('a');
   link.href = url;
@@ -37,7 +38,8 @@ async function streamReply(
   payload: Record<string, unknown>,
   onChunk: (text: string) => void,
   onSources: (sources: SearchSource[]) => void,
-): Promise<{ text: string; sources?: SearchSource[] }> {
+  onFile: (file: GeneratedFile) => void,
+): Promise<{ text: string; sources?: SearchSource[]; file?: GeneratedFile }> {
   const response = await fetch('/api/chat', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
   });
@@ -51,6 +53,7 @@ async function streamReply(
   let buffer = '';
   let full = '';
   let sources: SearchSource[] | undefined;
+  let file: GeneratedFile | undefined;
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -64,11 +67,11 @@ async function streamReply(
       const data = JSON.parse(raw);
       if (type === 'chunk') { full += data as string; onChunk(full); }
       if (type === 'sources') { sources = data as SearchSource[]; onSources(sources); }
-      if (type === 'file') { const file = data as { filename: string; content: string }; downloadFile(file.filename, file.content); }
+      if (type === 'file') { file = data as GeneratedFile; onFile(file); }
       if (type === 'error') throw new Error(data as string);
     }
   }
-  return { text: full, sources };
+  return { text: full, sources, file };
 }
 
 export const useChat = (user: User | null, onReply: (text: string) => void, codeMode = false, webMode = false) => {
@@ -145,7 +148,8 @@ export const useChat = (user: User | null, onReply: (text: string) => void, code
         setIsSearching(false);
         setIsStreaming(true);
         setLogs(previous => previous.map(message => message.id === replaceId ? { ...message, text: partial } : message));
-      }, sources => setLogs(previous => previous.map(message => message.id === replaceId ? { ...message, sources } : message)));
+      }, sources => setLogs(previous => previous.map(message => message.id === replaceId ? { ...message, sources } : message)),
+      file => setLogs(previous => previous.map(message => message.id === replaceId ? { ...message, file } : message)));
     } finally {
       setIsSearching(false);
     }
@@ -160,7 +164,7 @@ export const useChat = (user: User | null, onReply: (text: string) => void, code
     setIsLoading(true);
     try {
       const response = await requestReply(history, userMessage, attachment, userName, placeholder.id);
-      const reply = { ...placeholder, text: response.text, ...(response.sources ? { sources: response.sources } : {}) };
+      const reply = { ...placeholder, text: response.text, ...(response.sources ? { sources: response.sources } : {}), ...(response.file ? { file: response.file } : {}) };
       await persist(userMessage, reply, codeModeRef.current);
       onReply(response.text);
     } catch (error) {
@@ -185,7 +189,7 @@ export const useChat = (user: User | null, onReply: (text: string) => void, code
     setIsStreaming(true);
     try {
       const response = await requestReply(history, userMessage, null, userName, placeholder.id);
-      const reply = { ...placeholder, text: response.text, ...(response.sources ? { sources: response.sources } : {}) };
+      const reply = { ...placeholder, text: response.text, ...(response.sources ? { sources: response.sources } : {}), ...(response.file ? { file: response.file } : {}) };
       const uid = userRef.current?.uid;
       const chatId = chatIdRef.current;
       if (uid && chatId) {

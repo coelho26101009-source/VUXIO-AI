@@ -6,12 +6,18 @@ export interface SearchSource {
   content?: string;
 }
 
+export interface GeneratedFile {
+  filename: string;
+  content: string;
+}
+
 export interface LogMessage {
   id: string;
   source: MessageSource;
   text: string;
   timestamp: string;
   sources?: SearchSource[];
+  file?: GeneratedFile;
 }
 
 export interface Chat {

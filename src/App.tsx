@@ -9,9 +9,11 @@ import { LoginScreen } from './components/LoginScreen';
 import { Sidebar } from './components/Sidebar';
 import { VuxioAvatar } from './components/VuxioAvatar';
 import { InputBar } from './components/InputBar';
-import type { Attachment } from './types';
+import { FileAttachment } from './components/FileAttachment';
+import type { Attachment, GeneratedFile } from './types';
 
 const MarkdownMessage = lazy(() => import('./components/MarkdownMessage').then(module => ({ default: module.MarkdownMessage })));
+const FilePreviewPanel = lazy(() => import('./components/FilePreviewPanel').then(module => ({ default: module.FilePreviewPanel })));
 
 const CopyButton: React.FC<{ text: string; isCodeMode: boolean }> = ({ text, isCodeMode }) => {
   const [copied, setCopied] = useState(false);
@@ -122,6 +124,7 @@ const App: React.FC = () => {
   const [isWebMode,  setIsWebMode]  = useState(false);
   const [currentTime, setCurrentTime] = useState('--:--:--');
   const [currentDate, setCurrentDate] = useState('--/--');
+  const [previewFile, setPreviewFile] = useState<GeneratedFile | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const toggleMute = () => {
@@ -306,6 +309,9 @@ const App: React.FC = () => {
                             ))}
                           </div>
                         )}
+                        {log.file && (
+                          <FileAttachment file={log.file} isCodeMode={isCodeMode} onOpen={() => setPreviewFile(log.file!)} />
+                        )}
                         {isStreaming && isLastVuxio && (
                           <span className={`inline-block w-[2px] h-[1em] ml-0.5 align-middle ${isCodeMode ? 'bg-green-400' : 'bg-purple-400'}`}
                             style={{ animation: 'VUXIO-cursor 0.8s ease-in-out infinite' }} />
@@ -364,6 +370,12 @@ const App: React.FC = () => {
         </main>
         <div className="p-4 sm:p-6"><InputBar onSend={handleSend} isLoading={isLoading} isConnected={isConnected} isCodeMode={isCodeMode} /></div>
       </div>
+
+      {/* File preview panel + click-away backdrop */}
+      {previewFile && <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm" onClick={() => setPreviewFile(null)} />}
+      <Suspense fallback={null}>
+        <FilePreviewPanel file={previewFile} isCodeMode={isCodeMode} onClose={() => setPreviewFile(null)} />
+      </Suspense>
       <style>{`
         @keyframes VUXIO-orbit { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         @keyframes VUXIO-orbit-r { from { transform: rotate(360deg); } to { transform: rotate(0deg); } }
