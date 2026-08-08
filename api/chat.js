@@ -245,8 +245,14 @@ export default async function handler(req, res) {
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders?.();
     if (results.length) sendEvent(res, 'sources', results.map(({ title, url }) => ({ title, url })));
-    const stream = body.mode === 'code' ? streamGemini : streamGroq;
-    await stream({ messages: body.messages, system, attachment: body.attachment, signal: controller.signal, onChunk: (text) => text && sendEvent(res, 'chunk', text) });
+    // Gemini used to be primary for Code Mode with a Groq fallback on failure; flipped
+    // because Gemini was the unreliable link (model deprecations, unpredictable 404/5xx).
+    // Groq direct for both modes now, code mode still gets its own model.
+    await streamGroq({
+      messages: body.messages, system, attachment: body.attachment, signal: controller.signal,
+      textModel: body.mode === 'code' ? CODE_FALLBACK_MODEL : TEXT_MODEL,
+      onChunk: (text) => text && sendEvent(res, 'chunk', text),
+    });
     sendEvent(res, 'done', null);
     res.end();
   } catch (error) {
