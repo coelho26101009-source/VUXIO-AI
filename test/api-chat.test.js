@@ -131,3 +131,70 @@ test('code mode falls back to Groq when Gemini rejects the request', async () =>
   assert.ok(groq, 'a 404 from Gemini should fall back to Groq, not fail the request');
   assert.equal(JSON.parse(groq.options.body).model, 'groq/compound');
 });
+
+// --- <think> filtering -------------------------------------------------
+// Exercised through the handler, since the filter is internal to api/chat.js.
+// Each case streams the content back split at a deliberately awkward point.
+const streamOf = (...chunks) => new ReadableStream({
+  start(controller) {
+    const encode = new TextEncoder();
+    for (const chunk of chunks) {
+      controller.enqueue(encode.encode(
+        `data: ${JSON.stringify({ choices: [{ delta: { content: chunk } }] })}\n\n`,
+      ));
+    }
+    controller.enqueue(encode.encode('data: [DONE]\n\n'));
+    controller.close();
+  },
+});
+
+const replyText = async (chunks, ip) => {
+  const realFetch = globalThis.fetch;
+  const realKey = process.env.GROQ_API_KEY;
+  const realGemini = process.env.GEMINI_API_KEY;
+  process.env.GROQ_API_KEY = 'test-groq-key';
+  delete process.env.GEMINI_API_KEY;
+
+  globalThis.fetch = async () => ({ ok: true, status: 200, body: streamOf(...chunks) });
+
+  let out = '';
+  const res = response();
+  res.write = (chunk) => { out += chunk; };
+  try {
+    await handler(
+      { method: 'POST', headers: { 'x-forwarded-for': ip },
+        body: { mode: 'standard', messages: [{ role: 'user', content: 'hi' }] } },
+      res,
+    );
+  } finally {
+    globalThis.fetch = realFetch;
+    if (realKey === undefined) delete process.env.GROQ_API_KEY; else process.env.GROQ_API_KEY = realKey;
+    if (realGemini !== undefined) process.env.GEMINI_API_KEY = realGemini;
+  }
+  return out.split('\n')
+    .filter((line) => line.startsWith('data: ') && !line.includes('"sources"'))
+    .map((line) => { try { return JSON.parse(line.slice(6)); } catch { return ''; } })
+    .filter((value) => typeof value === 'string')
+    .join('');
+};
+
+test('a reasoning model\'s <think> block never reaches the user', async () => {
+  const text = await replyText(['<think>plan the answer</think>', 'Resposta.'], '10.5.0.1');
+  assert.equal(text, 'Resposta.');
+});
+
+test('<think> split across stream chunks is still stripped', async () => {
+  // The case a per-chunk regex misses: no single chunk contains a whole tag.
+  const text = await replyText(['<thi', 'nk>hidden', ' reasoning</thi', 'nk>Visivel.'], '10.5.0.2');
+  assert.equal(text, 'Visivel.');
+});
+
+test('text with no think block passes through byte for byte', async () => {
+  const text = await replyText(['Olá', ' Jose', '!'], '10.5.0.3');
+  assert.equal(text, 'Olá Jose!');
+});
+
+test('a lone < in normal prose is not mistaken for a tag', async () => {
+  const text = await replyText(['if (a < b) return;'], '10.5.0.4');
+  assert.equal(text, 'if (a < b) return;');
+});

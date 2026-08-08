@@ -44,6 +44,72 @@ const standardPrompt = (userName) => `Tu és o VUXIO, um assistente simpático c
 
 const parseBody = (body) => typeof body === 'string' ? JSON.parse(body) : body;
 
+const THINK_OPEN = '<think>';
+const THINK_CLOSE = '</think>';
+
+/**
+ * Hides a reasoning model's <think> scratchpad from the streamed reply.
+ *
+ * qwen/qwen3.6-27b (the vision model) narrates its reasoning in <think> blocks
+ * before answering; the other models here do not. Without this the user watches
+ * that scratchpad type itself out as if it were the answer.
+ *
+ * Stateful because the stream is chunked: a tag can be split across two SSE
+ * chunks ("<thi" then "nk>"), so a regex applied per chunk misses it. Anything
+ * that could still turn out to be the start of a tag is held back until the
+ * next chunk proves otherwise, and flush() releases whatever is left over if
+ * the stream ends mid-tag.
+ */
+const createThinkFilter = () => {
+  let buffer = '';
+  let thinking = false;
+
+  const longestPartialTagSuffix = (text) => {
+    const longest = Math.max(THINK_OPEN.length, THINK_CLOSE.length) - 1;
+    for (let size = Math.min(longest, text.length); size > 0; size--) {
+      const tail = text.slice(-size);
+      if (THINK_OPEN.startsWith(tail) || THINK_CLOSE.startsWith(tail)) return size;
+    }
+    return 0;
+  };
+
+  return {
+    push(chunk) {
+      buffer += chunk;
+      let visible = '';
+      for (;;) {
+        if (thinking) {
+          const end = buffer.indexOf(THINK_CLOSE);
+          if (end === -1) break;
+          buffer = buffer.slice(end + THINK_CLOSE.length);
+          thinking = false;
+          continue;
+        }
+        const start = buffer.indexOf(THINK_OPEN);
+        if (start === -1) break;
+        visible += buffer.slice(0, start);
+        buffer = buffer.slice(start + THINK_OPEN.length);
+        thinking = true;
+      }
+      if (!thinking) {
+        const hold = longestPartialTagSuffix(buffer);
+        visible += buffer.slice(0, buffer.length - hold);
+        buffer = buffer.slice(buffer.length - hold);
+      }
+      return visible;
+    },
+    // A stream that ends inside a <think> block has nothing to show; one that
+    // ends on a partial tag should still show those characters rather than
+    // silently swallow them.
+    flush() {
+      if (thinking) return '';
+      const rest = buffer;
+      buffer = '';
+      return rest;
+    },
+  };
+};
+
 const validate = (body) => {
   if (!body || !Array.isArray(body.messages) || body.messages.length === 0 || body.messages.length > MAX_MESSAGES) {
     throw new Error('Pedido inválido.');
@@ -104,6 +170,7 @@ async function streamGroq({ messages, system, attachment, onChunk, signal, textM
   if (!response.ok || !response.body) throw new Error('Não foi possível contactar o modelo de IA.');
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
+  const think = createThinkFilter();
   let buffer = '';
   while (true) {
     const { done, value } = await reader.read();
@@ -113,9 +180,12 @@ async function streamGroq({ messages, system, attachment, onChunk, signal, textM
     buffer = lines.pop() ?? '';
     for (const line of lines) {
       if (!line.startsWith('data: ') || line.trim() === 'data: [DONE]') continue;
-      try { onChunk(JSON.parse(line.slice(6)).choices?.[0]?.delta?.content ?? ''); } catch { /* ignore malformed SSE */ }
+      try {
+        onChunk(think.push(JSON.parse(line.slice(6)).choices?.[0]?.delta?.content ?? ''));
+      } catch { /* ignore malformed SSE */ }
     }
   }
+  onChunk(think.flush());
 }
 
 async function streamGemini({ messages, system, attachment, onChunk, signal }) {
