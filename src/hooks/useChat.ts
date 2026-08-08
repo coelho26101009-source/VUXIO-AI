@@ -160,7 +160,7 @@ export const useChat = (user: User | null, onReply: (text: string) => void, code
     setIsLoading(true);
     try {
       const response = await requestReply(history, userMessage, attachment, userName, placeholder.id);
-      const reply = { ...placeholder, text: response.text, sources: response.sources };
+      const reply = { ...placeholder, text: response.text, ...(response.sources ? { sources: response.sources } : {}) };
       await persist(userMessage, reply, codeModeRef.current);
       onReply(response.text);
     } catch (error) {
@@ -185,7 +185,7 @@ export const useChat = (user: User | null, onReply: (text: string) => void, code
     setIsStreaming(true);
     try {
       const response = await requestReply(history, userMessage, null, userName, placeholder.id);
-      const reply = { ...placeholder, text: response.text, sources: response.sources };
+      const reply = { ...placeholder, text: response.text, ...(response.sources ? { sources: response.sources } : {}) };
       const uid = userRef.current?.uid;
       const chatId = chatIdRef.current;
       if (uid && chatId) {
