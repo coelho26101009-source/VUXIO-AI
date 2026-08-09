@@ -32,6 +32,14 @@ const isTextFile = (file: File) => {
   return TEXT_EXTENSIONS.has(ext) || file.type.startsWith('text/');
 };
 
+// Explicit extensions, not `image/*` / `text/*` wildcards: Linux's native file
+// picker (GTK, via the portal Chromium/Electron use) turns each wildcard MIME
+// group into its own named filter ("Images", "Text") and defaults the dialog
+// to the first one -- so .c/.py files were hidden behind a manual switch to
+// "All Files". Listing extensions directly keeps it a single combined filter.
+const IMAGE_EXTENSIONS = '.jpg,.jpeg,.png,.gif,.webp,.bmp,.svg';
+const CODE_EXTENSIONS = [...TEXT_EXTENSIONS].map(ext => `.${ext}`).join(',');
+
   // Listen for mic transcript
   useEffect(() => {
     const handler = (e: Event) => {
@@ -170,7 +178,7 @@ const isTextFile = (file: File) => {
       <input
         ref={fileRef}
         type="file"
-        accept={isCodeMode ? 'image/*,application/pdf,text/*,.c,.h,.cpp,.hpp,.py,.js,.jsx,.ts,.tsx,.java,.go,.rs,.rb,.php,.sh,.json,.yaml,.yml,.md,.sql,.asm' : 'image/*,text/*,.c,.h,.cpp,.hpp,.py,.js,.jsx,.ts,.tsx,.java,.go,.rs,.rb,.php,.sh,.json,.yaml,.yml,.md,.sql,.asm'}
+        accept={isCodeMode ? `${IMAGE_EXTENSIONS},.pdf,${CODE_EXTENSIONS}` : `${IMAGE_EXTENSIONS},${CODE_EXTENSIONS}`}
         onChange={handleFile}
         className="hidden"
       />
