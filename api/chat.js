@@ -198,7 +198,7 @@ async function streamGroq({ messages, system, attachment, onChunk, onFile, signa
   }
   const last = messages.at(-1);
   const textWithFile = isTextAttachment
-    ? `${last.content || `Analisa o ficheiro ${attachment.name}.`}\n\nFicheiro anexado: ${attachment.name}\n\`\`\`\n${attachment.text}\n\`\`\``
+    ? `${last.content || `Analisa o ficheiro ${attachment.name}.`}\n\n[Ficheiro anexado: ${attachment.name} -- responde em texto sobre o conteúdo. Não uses a tool create_file só para devolveres este ficheiro sem alterações; usa-a apenas se o utilizador pedir explicitamente um ficheiro novo ou uma versão modificada.]\n\`\`\`\n${attachment.text}\n\`\`\``
     : last.content;
   const apiMessages = [
     { role: 'system', content: system },
