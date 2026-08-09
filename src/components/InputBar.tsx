@@ -17,6 +17,21 @@ export const InputBar: React.FC<InputBarProps> = ({ onSend, isLoading, isConnect
 
   const canSend = (text.trim().length > 0 || attachment !== null) && !isLoading && isConnected;
 
+// Extensions read as plain text (source code + common text formats) rather than
+// sent as an image -- browsers often report an empty or generic mimeType for
+// these (e.g. .py as ''), so extension is the reliable signal, with a mimeType
+// fallback for text files outside this list.
+const TEXT_EXTENSIONS = new Set([
+  'c', 'h', 'cpp', 'hpp', 'cc', 'cxx', 'py', 'js', 'jsx', 'ts', 'tsx', 'java',
+  'go', 'rs', 'rb', 'php', 'sh', 'bash', 'json', 'yaml', 'yml', 'toml', 'xml',
+  'html', 'htm', 'css', 'md', 'txt', 'sql', 'lua', 'pl', 'swift', 'kt', 'cs',
+  'asm', 's', 'csv', 'ini', 'cfg', 'log',
+]);
+const isTextFile = (file: File) => {
+  const ext = file.name.includes('.') ? file.name.split('.').pop()!.toLowerCase() : '';
+  return TEXT_EXTENSIONS.has(ext) || file.type.startsWith('text/');
+};
+
   // Listen for mic transcript
   useEffect(() => {
     const handler = (e: Event) => {
@@ -60,11 +75,16 @@ export const InputBar: React.FC<InputBarProps> = ({ onSend, isLoading, isConnect
       alert('Não foi possível ler o ficheiro. Tenta novamente.');
       setAttachment(null);
     };
-    reader.onload = ev => {
-      const base64 = (ev.target?.result as string).split(',')[1];
-      setAttachment({ file, base64 });
-    };
-    reader.readAsDataURL(file);
+    if (isTextFile(file)) {
+      reader.onload = ev => setAttachment({ file, base64: '', text: ev.target?.result as string });
+      reader.readAsText(file);
+    } else {
+      reader.onload = ev => {
+        const base64 = (ev.target?.result as string).split(',')[1];
+        setAttachment({ file, base64 });
+      };
+      reader.readAsDataURL(file);
+    }
     if (fileRef.current) fileRef.current.value = '';
   };
 
@@ -150,7 +170,7 @@ export const InputBar: React.FC<InputBarProps> = ({ onSend, isLoading, isConnect
       <input
         ref={fileRef}
         type="file"
-        accept={isCodeMode ? 'image/*,application/pdf' : 'image/*'}
+        accept={isCodeMode ? 'image/*,application/pdf,text/*,.c,.h,.cpp,.hpp,.py,.js,.jsx,.ts,.tsx,.java,.go,.rs,.rb,.php,.sh,.json,.yaml,.yml,.md,.sql,.asm' : 'image/*,text/*,.c,.h,.cpp,.hpp,.py,.js,.jsx,.ts,.tsx,.java,.go,.rs,.rb,.php,.sh,.json,.yaml,.yml,.md,.sql,.asm'}
         onChange={handleFile}
         className="hidden"
       />

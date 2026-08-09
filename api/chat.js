@@ -149,8 +149,10 @@ const validate = (body) => {
     }
   }
   if (body.attachment) {
-    const { base64, mimeType } = body.attachment;
-    if (typeof base64 !== 'string' || (!['application/pdf'].includes(mimeType) && !mimeType.startsWith('image/')) || Math.ceil(base64.length * 0.75) > MAX_ATTACHMENT_BYTES) {
+    const { base64, mimeType, text } = body.attachment;
+    if (typeof text === 'string') {
+      if (text.length > MAX_ATTACHMENT_BYTES) throw new Error('Anexo inválido ou demasiado grande.');
+    } else if (typeof base64 !== 'string' || (!['application/pdf'].includes(mimeType) && !mimeType.startsWith('image/')) || Math.ceil(base64.length * 0.75) > MAX_ATTACHMENT_BYTES) {
       throw new Error('Anexo inválido ou demasiado grande.');
     }
   }
@@ -176,27 +178,37 @@ const getWebContext = async (query) => {
 
 async function streamGroq({ messages, system, attachment, onChunk, onFile, signal, textModel = TEXT_MODEL, tools }) {
   if (!process.env.GROQ_API_KEY) throw new Error('O serviço de IA não está configurado.');
-  if (attachment && !attachment.mimeType.startsWith('image/')) {
+  // A text/code file (.c, .py, ...) is read client-side as plain text rather than
+  // base64 -- it goes straight into the message as text, not through the
+  // image_url/vision path below, since a vision model can't meaningfully accept
+  // source code as an "image".
+  const isTextAttachment = attachment && typeof attachment.text === 'string';
+  const isImageAttachment = attachment && !isTextAttachment;
+  if (isImageAttachment && !attachment.mimeType.startsWith('image/')) {
     throw new Error('O modo normal suporta apenas imagens. Usa o Modo Code para analisar PDFs.');
   }
   const last = messages.at(-1);
+  const textWithFile = isTextAttachment
+    ? `${last.content || `Analisa o ficheiro ${attachment.name}.`}\n\nFicheiro anexado: ${attachment.name}\n\`\`\`\n${attachment.text}\n\`\`\``
+    : last.content;
   const apiMessages = [
     { role: 'system', content: system },
     ...messages.slice(0, -1),
     {
       role: 'user',
-      content: attachment
+      content: isImageAttachment
         ? [{ type: 'text', text: last.content || 'Analisa este ficheiro.' }, { type: 'image_url', image_url: { url: `data:${attachment.mimeType};base64,${attachment.base64}` } }]
-        : last.content,
+        : textWithFile,
     },
   ];
-  const model = attachment ? VISION_MODEL : textModel;
+  const model = isImageAttachment ? VISION_MODEL : textModel;
   const requestBody = { model, messages: apiMessages, temperature: 0.7, stream: true };
-  // Not offered alongside an attachment: the vision model is a separate,
+  // Not offered alongside an image attachment: the vision model is a separate,
   // narrower model from the one tools were designed against, and mixing
   // multimodal input with tool-calling is exactly the kind of combination
   // worth not assuming works rather than actually needing right now --
-  // nothing today asks for both at once.
+  // nothing today asks for both at once. A text attachment stays on the plain
+  // text model, so it keeps tool-calling (create_file) available.
   //
   // Not offered to groq/compound either: Groq's own docs (console.groq.com/docs/compound)
   // state custom user-defined tools aren't supported by compound systems, only their
@@ -204,7 +216,7 @@ async function streamGroq({ messages, system, attachment, onChunk, onFile, signa
   // request. Nothing currently routes here (Code Mode moved off compound to
   // CODE_FALLBACK_MODEL = TEXT_MODEL specifically over this), but the guard stays in
   // case compound is ever wired back in for something else.
-  if (tools && !attachment && model !== COMPOUND_MODEL) requestBody.tools = tools;
+  if (tools && !isImageAttachment && model !== COMPOUND_MODEL) requestBody.tools = tools;
   const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.GROQ_API_KEY}` },

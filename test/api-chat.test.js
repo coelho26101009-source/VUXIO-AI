@@ -113,6 +113,27 @@ test('code mode uses a model that actually supports custom tools', async () => {
   assert.ok(body.tools, 'expected create_file to be offered in Code Mode');
 });
 
+test('a text/code attachment is injected as text, not routed through the vision model', async () => {
+  const calls = await runWithStubbedFetch({
+    ...chat,
+    messages: [{ role: 'user', content: 'o que faz isto?' }],
+    attachment: { text: 'int main() { return 0; }', name: 'main.c', mimeType: 'text/x-csrc', base64: '' },
+  }, '10.0.0.4');
+  const groq = calls.find((call) => call.url.includes('api.groq.com'));
+  assert.ok(groq, 'expected a request to Groq');
+
+  const body = JSON.parse(groq.options.body);
+  // A .c/.py file has no image_url representation -- routing it through
+  // VISION_MODEL would either 400 or silently ignore the code. It must stay
+  // on the plain text model as literal message content instead.
+  assert.equal(body.model, 'openai/gpt-oss-120b');
+  assert.match(body.messages.at(-1).content, /int main\(\) \{ return 0; \}/);
+  assert.match(body.messages.at(-1).content, /main\.c/);
+  // Text attachments aren't multimodal, so create_file stays available --
+  // unlike an image attachment, which drops tools (see the guard in streamGroq).
+  assert.ok(body.tools, 'expected create_file to still be offered alongside a text attachment');
+});
+
 // --- <think> filtering -------------------------------------------------
 // Exercised through the handler, since the filter is internal to api/chat.js.
 // Each case streams the content back split at a deliberately awkward point.

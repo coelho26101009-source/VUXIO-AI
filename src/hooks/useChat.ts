@@ -143,7 +143,7 @@ export const useChat = (user: User | null, onReply: (text: string) => void, code
       return await streamReply({
         mode, webMode: webModeRef.current, userName,
         messages: [...history.slice(-MAX_HISTORY), userMessage].filter(message => message.source !== 'SYSTEM' && message.source !== 'ERROR').map(message => ({ role: message.source === 'VUXIO' ? 'assistant' : 'user', content: message.text })),
-        attachment: attachment ? { base64: attachment.base64, mimeType: attachment.file.type, name: attachment.file.name } : undefined,
+        attachment: attachment ? { base64: attachment.base64, mimeType: attachment.file.type, name: attachment.file.name, text: attachment.text } : undefined,
       }, partial => {
         setIsSearching(false);
         setIsStreaming(true);

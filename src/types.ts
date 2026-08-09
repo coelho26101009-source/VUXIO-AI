@@ -29,4 +29,8 @@ export interface Chat {
 export interface Attachment {
   file: File;
   base64: string;
+  // Set instead of base64 for code/text files -- read as plain text and
+  // injected directly into the message rather than sent as image_url, since
+  // a vision model can't meaningfully accept source code as an "image".
+  text?: string;
 }
