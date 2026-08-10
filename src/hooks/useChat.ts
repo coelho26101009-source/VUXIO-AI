@@ -74,7 +74,13 @@ async function streamReply(
   return { text: full, sources, file };
 }
 
-export const useChat = (user: User | null, onReply: (text: string) => void, codeMode = false, webMode = false) => {
+interface ChatOptions {
+  temperature: number;
+  memories: string[];
+  mcpServers: { name: string; url: string }[];
+}
+
+export const useChat = (user: User | null, onReply: (text: string) => void, codeMode = false, webMode = false, options?: ChatOptions) => {
   const [logs, setLogs] = useState<LogMessage[]>([]);
   const [chatList, setChatList] = useState<Chat[]>([]);
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);
@@ -86,11 +92,13 @@ export const useChat = (user: User | null, onReply: (text: string) => void, code
   const chatIdRef = useRef(currentChatId);
   const codeModeRef = useRef(codeMode);
   const webModeRef = useRef(webMode);
+  const optionsRef = useRef(options);
   userRef.current = user;
   logsRef.current = logs;
   chatIdRef.current = currentChatId;
   codeModeRef.current = codeMode;
   webModeRef.current = webMode;
+  optionsRef.current = options;
 
   const subscribeToChats = useCallback((uid: string) => {
     void setDoc(userDoc(uid), { email: userRef.current?.email ?? '', displayName: userRef.current?.displayName ?? '', lastSeen: serverTimestamp() }, { merge: true });
@@ -142,6 +150,9 @@ export const useChat = (user: User | null, onReply: (text: string) => void, code
     try {
       return await streamReply({
         mode, webMode: webModeRef.current, userName,
+        temperature: optionsRef.current?.temperature,
+        memories: optionsRef.current?.memories,
+        mcpServers: optionsRef.current?.mcpServers,
         messages: [...history.slice(-MAX_HISTORY), userMessage].filter(message => message.source !== 'SYSTEM' && message.source !== 'ERROR').map(message => ({ role: message.source === 'VUXIO' ? 'assistant' : 'user', content: message.text })),
         attachment: attachment ? { base64: attachment.base64, mimeType: attachment.file.type, name: attachment.file.name, text: attachment.text } : undefined,
       }, partial => {
@@ -212,5 +223,12 @@ export const useChat = (user: User | null, onReply: (text: string) => void, code
     }
   }, [isLoading, onReply, requestReply]);
 
-  return { logs, chatList, currentChatId, isLoading, isStreaming, isSearching, sendMessage, regenerate, newChat, loadChat, deleteChat, subscribeToChats };
+  // For local-only entries (e.g. the /remember confirmation) that never touch
+  // Firestore -- persisting them would mean inventing a chat document for a
+  // command that isn't part of the conversation with the model.
+  const addLocalMessage = useCallback((source: LogMessage['source'], text: string) => {
+    setLogs(previous => [...previous, makeMessage(source, text)]);
+  }, []);
+
+  return { logs, chatList, currentChatId, isLoading, isStreaming, isSearching, sendMessage, regenerate, newChat, loadChat, deleteChat, subscribeToChats, addLocalMessage };
 };

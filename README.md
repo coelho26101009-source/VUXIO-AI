@@ -60,6 +60,13 @@ It ships with three distinct operating modes:
 | **Delete chats** | Double-confirm delete to prevent accidents |
 | **Per-chat Code Mode flag** | Each saved chat remembers which mode it was created in |
 
+### Settings, Memory & Connectors
+| Feature | Details |
+|---|---|
+| **Settings panel** | Default mode, temperature, memory toggle, MCP servers, clear-all-chats — stored on the user's Firestore document |
+| **Cross-chat memory** | `/remember <text>` in the composer saves an entry the AI sees in every future chat; explicit only, nothing is auto-extracted |
+| **MCP connectors** | Remote HTTP MCP servers only (see *Architecture Notes*) — their tools are discovered and merged with `create_file` on every chat turn |
+
 ### UI & Experience
 | Feature | Details |
 |---|---|
@@ -216,7 +223,10 @@ service cloud.firestore {
 The Firestore data model uses nested subcollections:
 ```
 users/
-  {uid}/
+  {uid}/                 ← email, displayName, lastSeen,
+                            settings { defaultMode, temperature, memoryEnabled },
+                            memories [ { id, text, createdAt } ] (max 20),
+                            mcpServers [ { id, name, url } ] (max 5)
     chats/
       {chatId}/          ← title, isCodeMode, createdAt, updatedAt
         messages/
@@ -253,6 +263,19 @@ When Web Mode is active, the server searches Tavily (up to five results), inject
 
 ### Code Mode Fallback
 Gemini 2.5 Pro is the primary Code Mode model. On **any** error response Groq is able to serve instead, VUXIO falls back to Groq Compound with the same message history and no visible interruption. The condition is deliberately broad: it previously covered only `429` and `5xx`, so when a model was retired and Google began answering `404`, Code Mode failed outright instead of falling back. PDFs are the one case that still surfaces the error, since Groq cannot accept them.
+
+### Memory
+Memory is explicit only — typing `/remember <text>` in the composer is the only way an entry is created; nothing is extracted automatically from the conversation. Entries are capped at 20, 500 characters each, stored on the user's own Firestore document (not inside `chats/messages`), and injected into the system prompt as a clearly-tagged section only when the memory toggle in Settings is on. `api/chat.js` re-validates the array it receives (bounded count and length) rather than trusting the client.
+
+### MCP Connectors — remote HTTP only
+`api/chat.js` can call remote MCP servers (`tools/list` / `tools/call` over MCP's HTTP JSON-RPC transport) and merge their tools with `create_file`, namespaced by server index (`mcp0_<tool>`, `mcp1_<tool>`, ...) so a tool name a server sends can't collide with `create_file` or with another server. Two things this **cannot** do, and why:
+
+- **No local/stdio MCP servers.** A browser cannot spawn a subprocess, so only servers reachable over HTTP are configurable.
+- **No session persisted across chat turns.** `api/chat.js` is a stateless Vercel function — every chat turn that has MCP servers configured re-runs the MCP `initialize` handshake for each of them from scratch, rather than reusing a session from the previous message. This adds latency per turn (bounded by a per-server timeout, run in parallel across servers) but is unavoidable without adding external session storage, which was explicitly out of scope. Discovery is skipped entirely when it can't be used anyway — an image attachment forces the vision model, which drops every tool — so an image upload isn't held waiting on servers it will never query.
+
+A server that times out, errors, or returns a non-spec-compliant tool schema degrades to "no tools from that server" instead of failing the whole chat: a schema that isn't a valid `{ type: 'object', ... }` (or one implausibly large) is replaced with an empty schema before it ever reaches Groq, and if a completion still fails while MCP tools are attached, the handler retries once with tools stripped so the user gets a text answer instead of only an `event: error`. Two tools whose names sanitize to the same 59-character prefix get a numeric suffix instead of one silently overwriting the other in the tool lookup table used to route a call back to the right server. When the model does call a tool, the result is fed back for a real follow-up answer, bounded to `MAX_TOOL_ROUNDS`; the final round always runs with tools omitted, so a model that keeps calling tools instead of answering still has to produce text rather than leaving the reply blank.
+
+**SSRF.** `handler` has no authentication, only a per-IP rate limit, and fetches whatever MCP server URL the client supplies. `validate()` rejects anything other than `https:`, and rejects hostnames that are literal loopback/private/link-local addresses (`127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`, `0.0.0.0`, IPv6 `::1`, `::`, `fc00::/7`, `fe80::/10`) or well-known internal hostnames (`localhost`, `*.localhost`, `metadata.google.internal`). This only catches addresses written literally in the URL — it cannot catch a public hostname that *resolves* to a private IP at connect time (DNS rebinding), since the server fetches the given URL directly with no resolve-then-check step in between.
 
 ---
 

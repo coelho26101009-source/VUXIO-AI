@@ -1,19 +1,23 @@
 import React, { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
-import { ChevronDown, Menu, Volume2, VolumeX, User, Code2, Copy, Check, RefreshCw, Globe } from 'lucide-react';
+import { ChevronDown, Menu, Volume2, VolumeX, User, Code2, Copy, Check, RefreshCw, Globe, Settings as SettingsIcon } from 'lucide-react';
 
 import { useAuth } from './hooks/useAuth';
 import { useChat } from './hooks/useChat';
 import { useSpeech } from './hooks/useSpeech';
+import { useSettings } from './hooks/useSettings';
 
 import { LoginScreen } from './components/LoginScreen';
 import { Sidebar } from './components/Sidebar';
 import { VuxioAvatar } from './components/VuxioAvatar';
 import { InputBar } from './components/InputBar';
 import { FileAttachment } from './components/FileAttachment';
+import { SettingsPanel } from './components/SettingsPanel';
 import type { Attachment, GeneratedFile } from './types';
 
 const MarkdownMessage = lazy(() => import('./components/MarkdownMessage').then(module => ({ default: module.MarkdownMessage })));
 const FilePreviewPanel = lazy(() => import('./components/FilePreviewPanel').then(module => ({ default: module.FilePreviewPanel })));
+
+const REMEMBER_PREFIX = '/remember';
 
 const CopyButton: React.FC<{ text: string; isCodeMode: boolean }> = ({ text, isCodeMode }) => {
   const [copied, setCopied] = useState(false);
@@ -125,6 +129,7 @@ const App: React.FC = () => {
   const [currentTime, setCurrentTime] = useState('--:--:--');
   const [currentDate, setCurrentDate] = useState('--/--');
   const [previewFile, setPreviewFile] = useState<GeneratedFile | null>(null);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const toggleMute = () => {
@@ -132,8 +137,14 @@ const App: React.FC = () => {
     setIsMuted(prev => !prev);
   };
 
-  const { logs, chatList, currentChatId, isLoading, isStreaming, isSearching, sendMessage, regenerate, newChat, loadChat, deleteChat, subscribeToChats } =
-    useChat(user, isMuted ? () => {} : speak, isCodeMode, isWebMode);
+  const { settings, memories, mcpServers, updateSettings, addMemory, deleteMemory, addMcpServer, deleteMcpServer, maxMemories, maxMcpServers } = useSettings(user);
+
+  const { logs, chatList, currentChatId, isLoading, isStreaming, isSearching, sendMessage, regenerate, newChat, loadChat, deleteChat, subscribeToChats, addLocalMessage } =
+    useChat(user, isMuted ? () => {} : speak, isCodeMode, isWebMode, {
+      temperature: settings.temperature,
+      memories: settings.memoryEnabled ? memories.map(memory => memory.text) : [],
+      mcpServers: mcpServers.map(({ name, url }) => ({ name, url })),
+    });
 
   const hasMessages = logs.filter(l => l.source !== 'SYSTEM').length > 0;
 
@@ -162,9 +173,32 @@ const App: React.FC = () => {
     return () => unsub();
   }, [user, subscribeToChats]);
 
+  // /remember is intercepted before it ever reaches sendMessage: it's a
+  // client-side command, not a chat turn -- no AI call, and nothing here
+  // gets persisted to Firestore's chats/messages, only to the user's memory
+  // list (see useSettings.addMemory).
   const handleSend = useCallback((text: string, attachment: Attachment | null) => {
+    const trimmed = text.trim();
+    if (trimmed.toLowerCase().startsWith(REMEMBER_PREFIX)) {
+      addLocalMessage('USER', trimmed);
+      const value = trimmed.slice(REMEMBER_PREFIX.length).trim();
+      if (!user) {
+        addLocalMessage('VUXIO', 'Entra com a tua conta para guardares memórias.');
+      } else if (!value) {
+        addLocalMessage('VUXIO', 'Escreve algo depois de /remember, por exemplo: "/remember prefiro respostas curtas".');
+      } else if (addMemory(value)) {
+        addLocalMessage('VUXIO', `Memória guardada: "${value}"`);
+      } else {
+        addLocalMessage('VUXIO', 'Não foi possível guardar a memória.');
+      }
+      return;
+    }
     sendMessage(text, attachment, user?.displayName || 'Utilizador');
-  }, [sendMessage, user]);
+  }, [sendMessage, user, addMemory, addLocalMessage]);
+
+  const handleClearAllChats = useCallback(() => {
+    void Promise.all(chatList.map(chat => deleteChat(chat.id)));
+  }, [chatList, deleteChat]);
 
   if (authMode === 'loading') return <div className="h-screen flex items-center justify-center bg-[#0e0e18] text-white/20 uppercase tracking-widest text-xs">A carregar...</div>;
   if (authMode !== 'user' && authMode !== 'guest') {
@@ -178,7 +212,7 @@ const App: React.FC = () => {
 
       {/* Sidebar retrátil em todos os tamanhos */}
       <div className={`fixed md:relative inset-y-0 left-0 z-50 shrink-0 transform transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0 md:block' : '-translate-x-full md:hidden'}`}>
-        <Sidebar user={user} isGuest={authMode === 'guest'} chatList={chatList} currentChatId={currentChatId} isConnected={isConnected} isSpeaking={isSpeaking} isListening={isListening} isCodeMode={isCodeMode} onNewChat={() => { newChat(); setIsSidebarOpen(false); }} onLoadChat={(chat) => { loadChat(chat.id); setIsCodeMode(Boolean(chat.isCodeMode)); setIsWebMode(false); setIsSidebarOpen(false); }} onDeleteChat={deleteChat} onLogout={logout} onLogin={login} onToggleMic={() => toggleMic((t) => window.dispatchEvent(new CustomEvent('VUXIO-transcript', { detail: t })))} />
+        <Sidebar user={user} isGuest={authMode === 'guest'} chatList={chatList} currentChatId={currentChatId} isConnected={isConnected} isSpeaking={isSpeaking} isListening={isListening} isCodeMode={isCodeMode} onNewChat={() => { newChat(); setIsCodeMode(settings.defaultMode === 'code'); setIsSidebarOpen(false); }} onLoadChat={(chat) => { loadChat(chat.id); setIsCodeMode(Boolean(chat.isCodeMode)); setIsWebMode(false); setIsSidebarOpen(false); }} onDeleteChat={deleteChat} onLogout={logout} onLogin={login} onToggleMic={() => toggleMic((t) => window.dispatchEvent(new CustomEvent('VUXIO-transcript', { detail: t })))} />
       </div>
 
       <div className="flex-1 flex flex-col min-w-0">
@@ -224,6 +258,13 @@ const App: React.FC = () => {
               <div className="w-px h-6 bg-white/10" />
               <div><p className={`font-mono text-xs leading-none ${isCodeMode ? 'text-green-400' : 'text-purple-400'}`}>{currentDate}</p><p className="text-[9px] text-white/20 mt-0.5">HOJE</p></div>
             </div>
+            <button
+              onClick={() => setIsSettingsOpen(true)}
+              title="Definições"
+              className="p-1.5 text-white/30 hover:text-white/70 transition-colors"
+            >
+              <SettingsIcon size={18} />
+            </button>
             <a
               href="https://github.com/coelho26101009-source"
               target="_blank"
@@ -376,6 +417,25 @@ const App: React.FC = () => {
       <Suspense fallback={null}>
         <FilePreviewPanel file={previewFile} isCodeMode={isCodeMode} onClose={() => setPreviewFile(null)} />
       </Suspense>
+
+      {/* Settings panel + click-away backdrop */}
+      {isSettingsOpen && <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm" onClick={() => setIsSettingsOpen(false)} />}
+      <SettingsPanel
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        isCodeMode={isCodeMode}
+        isGuest={authMode === 'guest'}
+        settings={settings}
+        onUpdateSettings={updateSettings}
+        memories={memories}
+        onDeleteMemory={deleteMemory}
+        mcpServers={mcpServers}
+        onAddMcpServer={addMcpServer}
+        onDeleteMcpServer={deleteMcpServer}
+        onClearAllChats={handleClearAllChats}
+        maxMemories={maxMemories}
+        maxMcpServers={maxMcpServers}
+      />
       <style>{`
         @keyframes VUXIO-orbit { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         @keyframes VUXIO-orbit-r { from { transform: rotate(360deg); } to { transform: rotate(0deg); } }

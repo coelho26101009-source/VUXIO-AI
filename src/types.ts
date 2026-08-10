@@ -34,3 +34,22 @@ export interface Attachment {
   // a vision model can't meaningfully accept source code as an "image".
   text?: string;
 }
+
+export interface Memory {
+  id: string;
+  text: string;
+  createdAt: number;
+}
+
+// Only remote HTTP MCP servers -- a browser can't spawn a stdio subprocess.
+export interface McpServer {
+  id: string;
+  name: string;
+  url: string;
+}
+
+export interface Settings {
+  defaultMode: 'standard' | 'code';
+  temperature: number;
+  memoryEnabled: boolean;
+}

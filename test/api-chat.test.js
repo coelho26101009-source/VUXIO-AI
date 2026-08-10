@@ -134,6 +134,456 @@ test('a text/code attachment is injected as text, not routed through the vision 
   assert.ok(body.tools, 'expected create_file to still be offered alongside a text attachment');
 });
 
+// --- input validation (client is not a trust boundary) --------------------
+
+test('an oversized userName is rejected before it reaches the system prompt', async () => {
+  const res = response();
+  await handler({ method: 'POST', headers: { 'x-forwarded-for': '10.0.1.1' }, body: { ...chat, userName: 'x'.repeat(101) } }, res);
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.body.error, 'Nome de utilizador inválido.');
+});
+
+test('an attachment missing mimeType is rejected cleanly, not with a raw TypeError', async () => {
+  const res = response();
+  // No `text`, so this falls into the base64/mimeType branch of validate() --
+  // it used to call mimeType.startsWith() before checking mimeType was even
+  // a string, crashing with "Cannot read properties of undefined (reading
+  // 'startsWith')" and leaking that raw message to the client.
+  await handler({
+    method: 'POST',
+    headers: { 'x-forwarded-for': '10.0.1.2' },
+    body: { ...chat, attachment: { base64: 'aGVsbG8=' } },
+  }, res);
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.body.error, 'Anexo inválido ou demasiado grande.');
+});
+
+// --- model identity ------------------------------------------------------
+
+test('the system prompt states VUXIO\'s real model instead of letting it guess', async () => {
+  const calls = await runWithStubbedFetch(chat, '10.1.0.1');
+  const groq = calls.find((call) => call.url.includes('api.groq.com'));
+  const system = JSON.parse(groq.options.body).messages[0].content;
+  // Guards against the hallucination this was added to fix: asked "what
+  // model do you run on", VUXIO answered "GPT-4-turbo" with nothing in the
+  // prompt telling it otherwise.
+  assert.match(system, /openai\/gpt-oss-120b/);
+  assert.match(system, /qwen\/qwen3\.6-27b/);
+});
+
+// --- temperature -----------------------------------------------------------
+
+test('temperature defaults to 0.7 when the client omits it', async () => {
+  const calls = await runWithStubbedFetch(chat, '10.2.0.1');
+  const groq = calls.find((call) => call.url.includes('api.groq.com'));
+  assert.equal(JSON.parse(groq.options.body).temperature, 0.7);
+});
+
+test('a client-supplied temperature is forwarded to Groq', async () => {
+  const calls = await runWithStubbedFetch({ ...chat, temperature: 1.3 }, '10.2.0.2');
+  const groq = calls.find((call) => call.url.includes('api.groq.com'));
+  assert.equal(JSON.parse(groq.options.body).temperature, 1.3);
+});
+
+test('an out-of-range temperature is rejected before contacting Groq', async () => {
+  const res = response();
+  await handler({ method: 'POST', headers: { 'x-forwarded-for': '10.2.0.3' }, body: { ...chat, temperature: 5 } }, res);
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.body.error, 'Temperatura inválida.');
+});
+
+// --- cross-chat memory -----------------------------------------------------
+
+test('memories are validated and injected into the system prompt', async () => {
+  const calls = await runWithStubbedFetch({ ...chat, memories: ['gosta de respostas curtas'] }, '10.3.0.1');
+  const groq = calls.find((call) => call.url.includes('api.groq.com'));
+  const system = JSON.parse(groq.options.body).messages[0].content;
+  assert.match(system, /gosta de respostas curtas/);
+});
+
+test('an oversized memories array is rejected before contacting Groq', async () => {
+  const res = response();
+  const memories = Array.from({ length: 21 }, (_, i) => `memoria ${i}`);
+  await handler({ method: 'POST', headers: { 'x-forwarded-for': '10.3.0.2' }, body: { ...chat, memories } }, res);
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.body.error, 'Memórias inválidas.');
+});
+
+// --- MCP (remote HTTP servers) ----------------------------------------------
+// A stub JSON-RPC server standing in for a real remote MCP server, keyed by
+// the JSON-RPC method in each request body.
+const mcpJsonRpc = (id, result) => ({
+  ok: true,
+  headers: { get: (name) => (name === 'content-type' ? 'application/json' : null) },
+  text: async () => JSON.stringify({ jsonrpc: '2.0', id, result }),
+});
+
+test('an invalid MCP server URL is rejected before contacting Groq', async () => {
+  const res = response();
+  await handler({ method: 'POST', headers: { 'x-forwarded-for': '10.9.0.1' }, body: { ...chat, mcpServers: [{ name: 'Bad', url: 'not-a-url' }] } }, res);
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.body.error, 'Servidores MCP inválidos.');
+});
+
+test('MCP server URLs pointing at loopback, link-local, or private literals are rejected (SSRF)', async () => {
+  const blocked = [
+    'http://169.254.169.254/latest/meta-data/', // cloud metadata endpoint, plain http
+    'https://127.0.0.1:8080/admin',
+    'https://[::1]:9000/',
+    'https://localhost/',
+    'https://sub.localhost/',
+    'https://metadata.google.internal/',
+    'https://10.1.2.3/',
+    'https://192.168.1.1/',
+    'https://172.16.0.5/',
+    'https://172.31.255.255/',
+    'https://[fe80::1]/',
+    'https://[fc00::1]/',
+    'https://0.0.0.0/',
+    // decimal/octal/hex-encoded 127.0.0.1 -- new URL() canonicalizes all of
+    // these to dotted-decimal before the check runs.
+    'https://2130706433/',
+    'https://0x7f000001/',
+  ];
+  for (const url of blocked) {
+    const res = response();
+    await handler({ method: 'POST', headers: { 'x-forwarded-for': '10.9.0.100' }, body: { ...chat, mcpServers: [{ name: 'X', url }] } }, res);
+    assert.equal(res.statusCode, 400, `expected ${url} to be rejected`);
+    assert.equal(res.body.error, 'Servidores MCP inválidos.');
+  }
+});
+
+test('a discovered MCP tool is namespaced, offered to Groq, and its result reaches a follow-up answer', async () => {
+  const realFetch = globalThis.fetch;
+  const realGroqKey = process.env.GROQ_API_KEY;
+  process.env.GROQ_API_KEY = 'test-groq-key';
+
+  let groqCallCount = 0;
+  const offeredToolNames = [];
+
+  globalThis.fetch = async (url, options) => {
+    const href = String(url);
+    if (href.includes('mock-mcp.example.com')) {
+      const message = JSON.parse(options.body);
+      if (message.method === 'initialize') return mcpJsonRpc(message.id, {});
+      if (message.method === 'notifications/initialized') return { ok: true, headers: { get: () => null } };
+      if (message.method === 'tools/list') return mcpJsonRpc(message.id, { tools: [{ name: 'lookup', description: 'Looks something up' }] });
+      if (message.method === 'tools/call') return mcpJsonRpc(message.id, { content: [{ type: 'text', text: 'resultado da ferramenta' }] });
+      throw new Error(`unexpected MCP method ${message.method}`);
+    }
+
+    groqCallCount += 1;
+    const requestBody = JSON.parse(options.body);
+    if (groqCallCount === 1) {
+      offeredToolNames.push(...(requestBody.tools ?? []).map((tool) => tool.function.name));
+      // First round: the model calls the discovered tool instead of answering.
+      return {
+        ok: true, status: 200,
+        body: new ReadableStream({
+          start(controller) {
+            const encode = new TextEncoder();
+            controller.enqueue(encode.encode(`data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_1', function: { name: 'mcp0_lookup', arguments: '{}' } }] } }] })}\n\n`));
+            controller.enqueue(encode.encode('data: [DONE]\n\n'));
+            controller.close();
+          },
+        }),
+      };
+    }
+    // Second round: the tool result must already be in the conversation the
+    // model sees, as a `tool` message answering the exact tool_call_id.
+    const toolMessage = requestBody.messages.find((message) => message.role === 'tool');
+    assert.ok(toolMessage, 'expected a tool-result message in the follow-up request');
+    assert.equal(toolMessage.tool_call_id, 'call_1');
+    assert.equal(toolMessage.content, 'resultado da ferramenta');
+    return { ok: true, status: 200, body: groqStream() };
+  };
+
+  try {
+    await handler({
+      method: 'POST',
+      headers: { 'x-forwarded-for': '10.9.0.2' },
+      body: { ...chat, messages: [{ role: 'user', content: 'usa a ferramenta lookup' }], mcpServers: [{ name: 'Demo', url: 'https://mock-mcp.example.com/mcp' }] },
+    }, response());
+    assert.equal(groqCallCount, 2, 'expected a follow-up completion once the tool result came back');
+    assert.ok(offeredToolNames.includes('mcp0_lookup'), 'expected the discovered tool namespaced by server index and merged with create_file');
+    assert.ok(offeredToolNames.includes('create_file'), 'expected create_file to still be offered alongside MCP tools');
+  } finally {
+    globalThis.fetch = realFetch;
+    if (realGroqKey === undefined) delete process.env.GROQ_API_KEY; else process.env.GROQ_API_KEY = realGroqKey;
+  }
+});
+
+test('an unreachable MCP server degrades to "no tools from it" instead of failing the whole chat', async () => {
+  const realFetch = globalThis.fetch;
+  const realGroqKey = process.env.GROQ_API_KEY;
+  process.env.GROQ_API_KEY = 'test-groq-key';
+
+  let groqCalled = false;
+  globalThis.fetch = async (url) => {
+    if (String(url).includes('down.example.com')) throw new Error('connection refused');
+    groqCalled = true;
+    return { ok: true, status: 200, body: groqStream() };
+  };
+
+  let wrote = '';
+  const res = response();
+  res.write = (chunk) => { wrote += chunk; };
+
+  try {
+    await handler({
+      method: 'POST',
+      headers: { 'x-forwarded-for': '10.9.0.3' },
+      body: { ...chat, mcpServers: [{ name: 'Down', url: 'https://down.example.com/mcp' }] },
+    }, res);
+    // statusCode/body are undefined-by-default on the fake res, so asserting
+    // just those two would pass even if the handler never touched Groq at
+    // all -- assert real evidence that a reply actually happened instead.
+    assert.equal(res.statusCode, 200, 'the chat must still complete even though its only configured MCP server is unreachable');
+    assert.ok(groqCalled, 'expected the handler to still contact Groq for a real answer');
+    assert.match(wrote, /event: chunk/, 'expected an actual reply chunk to reach the client, not a silent no-op');
+  } finally {
+    globalThis.fetch = realFetch;
+    if (realGroqKey === undefined) delete process.env.GROQ_API_KEY; else process.env.GROQ_API_KEY = realGroqKey;
+  }
+});
+
+test('a non-spec-compliant inputSchema is coerced to an empty object schema instead of reaching Groq broken', async () => {
+  const realFetch = globalThis.fetch;
+  const realGroqKey = process.env.GROQ_API_KEY;
+  process.env.GROQ_API_KEY = 'test-groq-key';
+
+  let offeredParameters;
+  globalThis.fetch = async (url, options) => {
+    const href = String(url);
+    if (href.includes('weird-mcp.example.com')) {
+      const message = JSON.parse(options.body);
+      if (message.method === 'initialize') return mcpJsonRpc(message.id, {});
+      if (message.method === 'notifications/initialized') return { ok: true, headers: { get: () => null } };
+      // inputSchema: [] passes a naive `typeof === 'object'` check (arrays
+      // are objects) but isn't a JSON Schema object -- this is what used to
+      // reach Groq as-is and 400 the whole completion.
+      if (message.method === 'tools/list') return mcpJsonRpc(message.id, { tools: [{ name: 'weird', inputSchema: [] }] });
+      throw new Error(`unexpected MCP method ${message.method}`);
+    }
+    const requestBody = JSON.parse(options.body);
+    const weird = (requestBody.tools ?? []).find((tool) => tool.function.name === 'mcp0_weird');
+    offeredParameters = weird?.function.parameters;
+    return { ok: true, status: 200, body: groqStream() };
+  };
+
+  try {
+    await handler({
+      method: 'POST', headers: { 'x-forwarded-for': '10.9.0.4' },
+      body: { ...chat, mcpServers: [{ name: 'Weird', url: 'https://weird-mcp.example.com/mcp' }] },
+    }, response());
+    assert.deepEqual(offeredParameters, { type: 'object', properties: {} });
+  } finally {
+    globalThis.fetch = realFetch;
+    if (realGroqKey === undefined) delete process.env.GROQ_API_KEY; else process.env.GROQ_API_KEY = realGroqKey;
+  }
+});
+
+test('two tool names sharing a long prefix are disambiguated instead of one silently overwriting the other', async () => {
+  const realFetch = globalThis.fetch;
+  const realGroqKey = process.env.GROQ_API_KEY;
+  process.env.GROQ_API_KEY = 'test-groq-key';
+
+  // First 59 chars are identical, so the old 40-char truncation (and the
+  // current 59-char one) both sanitize these two down to the same string.
+  const longPrefix = 'a'.repeat(59);
+  let groqCallCount = 0;
+  let offeredNames = [];
+  let calledOriginalName;
+
+  globalThis.fetch = async (url, options) => {
+    const href = String(url);
+    if (href.includes('collide-mcp.example.com')) {
+      const message = JSON.parse(options.body);
+      if (message.method === 'initialize') return mcpJsonRpc(message.id, {});
+      if (message.method === 'notifications/initialized') return { ok: true, headers: { get: () => null } };
+      if (message.method === 'tools/list') {
+        return mcpJsonRpc(message.id, { tools: [{ name: `${longPrefix}_read` }, { name: `${longPrefix}_write` }] });
+      }
+      if (message.method === 'tools/call') {
+        calledOriginalName = message.params.name;
+        return mcpJsonRpc(message.id, { content: [{ type: 'text', text: 'ok' }] });
+      }
+      throw new Error(`unexpected MCP method ${message.method}`);
+    }
+
+    groqCallCount += 1;
+    const requestBody = JSON.parse(options.body);
+    if (groqCallCount === 1) {
+      offeredNames = (requestBody.tools ?? []).map((tool) => tool.function.name).filter((name) => name.startsWith('mcp0_'));
+      // The model asks for the second (write) tool by its disambiguated name.
+      const second = offeredNames[1];
+      return {
+        ok: true, status: 200,
+        body: new ReadableStream({
+          start(controller) {
+            const encode = new TextEncoder();
+            controller.enqueue(encode.encode(`data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_1', function: { name: second, arguments: '{}' } }] } }] })}\n\n`));
+            controller.enqueue(encode.encode('data: [DONE]\n\n'));
+            controller.close();
+          },
+        }),
+      };
+    }
+    return { ok: true, status: 200, body: groqStream() };
+  };
+
+  try {
+    await handler({
+      method: 'POST',
+      headers: { 'x-forwarded-for': '10.9.0.5' },
+      body: { ...chat, mcpServers: [{ name: 'Collide', url: 'https://collide-mcp.example.com/mcp' }] },
+    }, response());
+
+    assert.equal(offeredNames.length, 2, 'expected both tools to be offered, not one overwriting the other');
+    assert.notEqual(offeredNames[0], offeredNames[1], 'expected the truncated names to be disambiguated instead of colliding');
+    // The model asked for the "write" tool by its disambiguated name -- the
+    // server must actually run "write", not silently fall back to "read".
+    assert.equal(calledOriginalName, `${longPrefix}_write`);
+  } finally {
+    globalThis.fetch = realFetch;
+    if (realGroqKey === undefined) delete process.env.GROQ_API_KEY; else process.env.GROQ_API_KEY = realGroqKey;
+  }
+});
+
+test('an MCP server responding over SSE without a space after "data:" is still parsed', async () => {
+  const realFetch = globalThis.fetch;
+  const realGroqKey = process.env.GROQ_API_KEY;
+  process.env.GROQ_API_KEY = 'test-groq-key';
+
+  // The SSE spec makes the space after the field name optional -- this
+  // frame is exactly as valid as "data: {...}".
+  const sseFrame = (id, result) => ({
+    ok: true,
+    headers: { get: (name) => (name === 'content-type' ? 'text/event-stream' : null) },
+    text: async () => `data:${JSON.stringify({ jsonrpc: '2.0', id, result })}\n\n`,
+  });
+
+  let offeredNames = [];
+  globalThis.fetch = async (url, options) => {
+    const href = String(url);
+    if (href.includes('sse-mcp.example.com')) {
+      const message = JSON.parse(options.body);
+      if (message.method === 'initialize') return sseFrame(message.id, {});
+      if (message.method === 'notifications/initialized') return { ok: true, headers: { get: () => null } };
+      if (message.method === 'tools/list') return sseFrame(message.id, { tools: [{ name: 'ping' }] });
+      throw new Error(`unexpected MCP method ${message.method}`);
+    }
+    const requestBody = JSON.parse(options.body);
+    offeredNames = (requestBody.tools ?? []).map((tool) => tool.function.name);
+    return { ok: true, status: 200, body: groqStream() };
+  };
+
+  try {
+    await handler({
+      method: 'POST',
+      headers: { 'x-forwarded-for': '10.9.0.6' },
+      body: { ...chat, mcpServers: [{ name: 'SSE', url: 'https://sse-mcp.example.com/mcp' }] },
+    }, response());
+    assert.ok(offeredNames.includes('mcp0_ping'), 'expected the space-less SSE handshake to still succeed instead of marking the server unavailable');
+  } finally {
+    globalThis.fetch = realFetch;
+    if (realGroqKey === undefined) delete process.env.GROQ_API_KEY; else process.env.GROQ_API_KEY = realGroqKey;
+  }
+});
+
+test('hitting MAX_TOOL_ROUNDS still gets a real text answer instead of a blank reply', async () => {
+  const realFetch = globalThis.fetch;
+  const realGroqKey = process.env.GROQ_API_KEY;
+  process.env.GROQ_API_KEY = 'test-groq-key';
+
+  let groqCallCount = 0;
+  const toolsOfferedPerCall = [];
+
+  globalThis.fetch = async (url, options) => {
+    const href = String(url);
+    if (href.includes('loopy-mcp.example.com')) {
+      const message = JSON.parse(options.body);
+      if (message.method === 'initialize') return mcpJsonRpc(message.id, {});
+      if (message.method === 'notifications/initialized') return { ok: true, headers: { get: () => null } };
+      if (message.method === 'tools/list') return mcpJsonRpc(message.id, { tools: [{ name: 'poke' }] });
+      // Mirrors callMcpTool's own "unavailable" message -- exactly the kind
+      // of result that makes a model retry the tool instead of answering.
+      if (message.method === 'tools/call') return mcpJsonRpc(message.id, { content: [{ type: 'text', text: 'esta ferramenta está indisponível de momento' }] });
+      throw new Error(`unexpected MCP method ${message.method}`);
+    }
+
+    groqCallCount += 1;
+    const requestBody = JSON.parse(options.body);
+    toolsOfferedPerCall.push(Boolean(requestBody.tools));
+    if (requestBody.tools) {
+      // The model keeps calling the tool on every round tools are offered.
+      return {
+        ok: true, status: 200,
+        body: new ReadableStream({
+          start(controller) {
+            const encode = new TextEncoder();
+            controller.enqueue(encode.encode(`data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: `call_${groqCallCount}`, function: { name: 'mcp0_poke', arguments: '{}' } }] } }] })}\n\n`));
+            controller.enqueue(encode.encode('data: [DONE]\n\n'));
+            controller.close();
+          },
+        }),
+      };
+    }
+    // Final round, no tools offered: the model has nothing left to call.
+    return { ok: true, status: 200, body: groqStream() };
+  };
+
+  let wrote = '';
+  const res = response();
+  res.write = (chunk) => { wrote += chunk; };
+
+  try {
+    await handler({
+      method: 'POST',
+      headers: { 'x-forwarded-for': '10.9.0.7' },
+      body: { ...chat, messages: [{ role: 'user', content: 'usa a ferramenta poke repetidamente' }], mcpServers: [{ name: 'Loopy', url: 'https://loopy-mcp.example.com/mcp' }] },
+    }, res);
+
+    assert.equal(groqCallCount, 4, 'expected 3 tool rounds plus one final tools-less round');
+    assert.deepEqual(toolsOfferedPerCall, [true, true, true, false], 'expected the final round to omit tools so the model must answer');
+    assert.match(wrote, /event: chunk/, 'expected the final round to actually stream an answer, not a blank reply');
+  } finally {
+    globalThis.fetch = realFetch;
+    if (realGroqKey === undefined) delete process.env.GROQ_API_KEY; else process.env.GROQ_API_KEY = realGroqKey;
+  }
+});
+
+test('MCP discovery is skipped for an image attachment, since its tools would be discarded anyway', async () => {
+  const realFetch = globalThis.fetch;
+  const realGroqKey = process.env.GROQ_API_KEY;
+  process.env.GROQ_API_KEY = 'test-groq-key';
+
+  let mcpContacted = false;
+  globalThis.fetch = async (url) => {
+    if (String(url).includes('unused-mcp.example.com')) {
+      mcpContacted = true;
+      throw new Error('should never be reached');
+    }
+    return { ok: true, status: 200, body: groqStream() };
+  };
+
+  try {
+    await handler({
+      method: 'POST',
+      headers: { 'x-forwarded-for': '10.9.0.8' },
+      body: {
+        ...chat,
+        attachment: { base64: Buffer.from('x').toString('base64'), mimeType: 'image/png' },
+        mcpServers: [{ name: 'Unused', url: 'https://unused-mcp.example.com/mcp' }],
+      },
+    }, response());
+    assert.equal(mcpContacted, false, 'expected MCP discovery to be skipped when an image attachment drops tools anyway');
+  } finally {
+    globalThis.fetch = realFetch;
+    if (realGroqKey === undefined) delete process.env.GROQ_API_KEY; else process.env.GROQ_API_KEY = realGroqKey;
+  }
+});
+
 // --- <think> filtering -------------------------------------------------
 // Exercised through the handler, since the filter is internal to api/chat.js.
 // Each case streams the content back split at a deliberately awkward point.
