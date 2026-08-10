@@ -15,6 +15,7 @@
 .env.production
 .env.production.local
 *.env
+.env.example
 
 # Ficheiros de configuração com chaves (Firebase, etc.)
 firebase-config.js
