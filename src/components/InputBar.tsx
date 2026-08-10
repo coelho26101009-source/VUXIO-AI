@@ -1,20 +1,15 @@
-import React, { useRef, useState, useCallback } from 'react';
-import { Paperclip, Mic, MicOff, Volume2, VolumeX, Send, X } from 'lucide-react';
+import React, { useRef, useState, useCallback, useEffect } from 'react';
+import { Paperclip, Send, X } from 'lucide-react';
 import type { Attachment } from '../types';
 
 interface InputBarProps {
   onSend: (text: string, attachment: Attachment | null) => void;
   isLoading: boolean;
   isConnected: boolean;
-  isMuted: boolean;
-  isListening: boolean;
-  onToggleMute: () => void;
-  onToggleMic: () => void;
+  isCodeMode?: boolean;
 }
 
-export const InputBar: React.FC<InputBarProps> = ({
-  onSend, isLoading, isConnected, isMuted, isListening, onToggleMute, onToggleMic
-}) => {
+export const InputBar: React.FC<InputBarProps> = ({ onSend, isLoading, isConnected, isCodeMode = false }) => {
   const [text, setText] = useState('');
   const [attachment, setAttachment] = useState<Attachment | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -22,95 +17,171 @@ export const InputBar: React.FC<InputBarProps> = ({
 
   const canSend = (text.trim().length > 0 || attachment !== null) && !isLoading && isConnected;
 
+// Extensions read as plain text (source code + common text formats) rather than
+// sent as an image -- browsers often report an empty or generic mimeType for
+// these (e.g. .py as ''), so extension is the reliable signal, with a mimeType
+// fallback for text files outside this list.
+const TEXT_EXTENSIONS = new Set([
+  'c', 'h', 'cpp', 'hpp', 'cc', 'cxx', 'py', 'js', 'jsx', 'ts', 'tsx', 'java',
+  'go', 'rs', 'rb', 'php', 'sh', 'bash', 'json', 'yaml', 'yml', 'toml', 'xml',
+  'html', 'htm', 'css', 'md', 'txt', 'sql', 'lua', 'pl', 'swift', 'kt', 'cs',
+  'asm', 's', 'csv', 'ini', 'cfg', 'log',
+]);
+const isTextFile = (file: File) => {
+  const ext = file.name.includes('.') ? file.name.split('.').pop()!.toLowerCase() : '';
+  return TEXT_EXTENSIONS.has(ext) || file.type.startsWith('text/');
+};
+
+// Explicit extensions, not `image/*` / `text/*` wildcards: Linux's native file
+// picker (GTK, via the portal Chromium/Electron use) turns each wildcard MIME
+// group into its own named filter ("Images", "Text") and defaults the dialog
+// to the first one -- so .c/.py files were hidden behind a manual switch to
+// "All Files". Listing extensions directly keeps it a single combined filter.
+const IMAGE_EXTENSIONS = '.jpg,.jpeg,.png,.gif,.webp,.bmp,.svg';
+const CODE_EXTENSIONS = [...TEXT_EXTENSIONS].map(ext => `.${ext}`).join(',');
+
+  // Listen for mic transcript
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const transcript = (e as CustomEvent<string>).detail;
+      setText(prev => prev ? `${prev} ${transcript}` : transcript);
+      textareaRef.current?.focus();
+    };
+    window.addEventListener('VUXIO-transcript', handler);
+    return () => window.removeEventListener('VUXIO-transcript', handler);
+  }, []);
+
   const handleSend = useCallback(() => {
     if (!canSend) return;
     onSend(text.trim(), attachment);
     setText('');
     setAttachment(null);
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-    }
+    if (textareaRef.current) textareaRef.current.style.height = 'auto';
   }, [canSend, text, attachment, onSend]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
   };
 
   const handleInput = () => {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = 'auto';
-    el.style.height = Math.min(el.scrollHeight, 140) + 'px';
+    el.style.height = Math.min(el.scrollHeight, 120) + 'px';
   };
 
-  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (file.size > 3 * 1024 * 1024) {
+      alert('Ficheiro demasiado grande. Máximo: 3MB.');
+      if (fileRef.current) fileRef.current.value = '';
+      return;
+    }
     const reader = new FileReader();
-    reader.onload = (ev) => {
-      const base64 = (ev.target?.result as string).split(',')[1];
-      setAttachment({ file, base64 });
+    reader.onerror = () => {
+      alert('Não foi possível ler o ficheiro. Tenta novamente.');
+      setAttachment(null);
     };
-    reader.readAsDataURL(file);
+    if (isTextFile(file)) {
+      reader.onload = ev => setAttachment({ file, base64: '', text: ev.target?.result as string });
+      reader.readAsText(file);
+    } else {
+      reader.onload = ev => {
+        const base64 = (ev.target?.result as string).split(',')[1];
+        setAttachment({ file, base64 });
+      };
+      reader.readAsDataURL(file);
+    }
     if (fileRef.current) fileRef.current.value = '';
   };
 
   return (
-    <div className="border-t border-white/5 px-4 py-4 bg-[#0e0e18]/80 backdrop-blur-sm">
+    <div className="px-6 pb-6 pt-2 shrink-0">
+      {/* Attachment pill */}
       {attachment && (
-        <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-amber-500/8 border border-amber-500/15 max-w-2xl mx-auto">
-          <Paperclip size={13} className="text-amber-400 shrink-0" />
-          <span className="text-xs text-amber-300 truncate">{attachment.file.name}</span>
+        <div className="flex items-center gap-2 mb-3 px-4 py-2 rounded-xl mx-auto max-w-2xl"
+          style={{ background: 'rgba(124,58,237,0.1)', border: '1px solid rgba(139,92,246,0.2)' }}>
+          <Paperclip size={13} className="text-purple-400 shrink-0" />
+          <span className="text-xs text-purple-300 truncate">{attachment.file.name}</span>
           <button onClick={() => setAttachment(null)} className="ml-auto text-white/30 hover:text-red-400 transition-colors">
             <X size={14} />
           </button>
         </div>
       )}
 
-      <div className="max-w-2xl mx-auto">
-        <div className="flex items-end gap-2 px-4 py-3 rounded-2xl bg-[#1a1a28] border border-amber-500/15 focus-within:border-amber-500/35 focus-within:shadow-[0_0_0_3px_rgba(245,158,11,0.05)] transition-all duration-200">
-          <textarea
-            ref={textareaRef}
-            value={text}
-            onChange={e => setText(e.target.value)}
-            onInput={handleInput}
-            onKeyDown={handleKeyDown}
-            rows={1}
-            disabled={!isConnected || isLoading}
-            placeholder={
-              !isConnected ? 'A conectar...' :
-              isLoading ? 'Vimo está a pensar...' :
-              'Pergunta ao Vimo algo...'
-            }
-            className="flex-1 bg-transparent border-none outline-none resize-none text-[#ececec] text-sm placeholder:text-white/20 leading-relaxed min-h-[22px] max-h-[140px] scrollbar-none disabled:opacity-50"
-            style={{ fontFamily: "'Sora', sans-serif" }}
-          />
+      {/* Input wrapper */}
+      <div
+        className="flex items-end gap-3 px-4 py-3 rounded-2xl mx-auto max-w-2xl transition-all duration-200"
+        style={{
+          background: 'rgba(255,255,255,0.04)',
+          border: isCodeMode ? '1px solid rgba(34,197,94,0.25)' : '1px solid rgba(139,92,246,0.2)',
+          boxShadow: '0 4px 24px rgba(0,0,0,0.3)',
+        }}
+        onFocus={() => {}}
+      >
+        {/* Clip */}
+        <button
+          onClick={() => fileRef.current?.click()}
+          className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-all"
+          style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.35)' }}
+          onMouseEnter={e => { e.currentTarget.style.color = isCodeMode ? '#4ade80' : '#a78bfa'; e.currentTarget.style.background = isCodeMode ? 'rgba(34,197,94,0.15)' : 'rgba(124,58,237,0.15)'; }}
+          onMouseLeave={e => { e.currentTarget.style.color = 'rgba(255,255,255,0.35)'; e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
+        >
+          <Paperclip size={17} />
+        </button>
 
-          <div className="flex items-center gap-1 shrink-0">
-            <button onClick={() => fileRef.current?.click()} title="Anexar ficheiro" className="w-8 h-8 rounded-lg flex items-center justify-center text-white/25 hover:text-white/60 hover:bg-white/6 transition-all">
-              <Paperclip size={16} />
-            </button>
-            <button onClick={onToggleMute} title={isMuted ? 'Ativar voz' : 'Mutar'} className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${isMuted ? 'text-red-400 bg-red-500/10' : 'text-white/25 hover:text-white/60 hover:bg-white/6'}`}>
-              {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
-            </button>
-            <button onClick={onToggleMic} title={isListening ? 'Parar microfone' : 'Microfone'} className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${isListening ? 'text-red-400 bg-red-500/10 animate-pulse' : 'text-white/25 hover:text-white/60 hover:bg-white/6'}`}>
-              {isListening ? <Mic size={16} /> : <MicOff size={16} />}
-            </button>
-            <button onClick={handleSend} disabled={!canSend} title="Enviar" className="w-8 h-8 rounded-lg flex items-center justify-center bg-amber-500 hover:bg-amber-400 text-black transition-all disabled:opacity-25 disabled:cursor-not-allowed disabled:hover:bg-amber-500 shadow-[0_2px_10px_rgba(245,158,11,0.25)] hover:shadow-[0_4px_16px_rgba(245,158,11,0.35)] hover:-translate-y-px active:translate-y-0">
-              <Send size={15} />
-            </button>
-          </div>
-        </div>
+        {/* Textarea */}
+        <textarea
+          ref={textareaRef}
+          value={text}
+          onChange={e => setText(e.target.value)}
+          onInput={handleInput}
+          onKeyDown={handleKeyDown}
+          rows={1}
+          disabled={!isConnected || isLoading}
+          placeholder={
+            !isConnected ? 'A conectar...' :
+            isLoading ? 'VUXIO está a pensar...' :
+            'Escreve a tua mensagem...'
+          }
+          className="flex-1 bg-transparent border-none outline-none resize-none text-sm leading-relaxed"
+          style={{
+            color: '#ececec',
+            minHeight: '22px',
+            maxHeight: '120px',
+            fontFamily: "'Sora', sans-serif",
+          }}
+        />
 
-        <p className="text-center text-xs text-white/15 mt-2.5">
-          Enter para enviar · Shift+Enter para nova linha
-        </p>
+        {/* Send */}
+        <button
+          onClick={handleSend}
+          disabled={!canSend}
+          className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-all duration-200"
+          style={{
+            background: canSend
+              ? isCodeMode ? 'linear-gradient(135deg, #16a34a, #22c55e)' : 'linear-gradient(135deg, #7c3aed, #6366f1)'
+              : 'rgba(255,255,255,0.06)',
+            boxShadow: canSend ? isCodeMode ? '0 4px 16px rgba(34,197,94,0.4)' : '0 4px 16px rgba(124,58,237,0.4)' : 'none',
+            color: canSend ? 'white' : 'rgba(255,255,255,0.2)',
+          }}
+        >
+          <Send size={16} />
+        </button>
       </div>
 
-      <input ref={fileRef} type="file" accept="image/*,application/pdf" onChange={handleFile} className="hidden" />
+      <p className="text-center text-xs mt-2.5" style={{ color: 'rgba(255,255,255,0.18)' }}>
+        Enter para enviar · Shift+Enter para nova linha
+      </p>
+
+      <input
+        ref={fileRef}
+        type="file"
+        accept={isCodeMode ? `${IMAGE_EXTENSIONS},.pdf,${CODE_EXTENSIONS}` : `${IMAGE_EXTENSIONS},${CODE_EXTENSIONS}`}
+        onChange={handleFile}
+        className="hidden"
+      />
     </div>
   );
 };

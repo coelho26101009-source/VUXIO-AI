@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Menu, Cpu, ChevronDown } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
+import { ChevronDown, Menu, Volume2, VolumeX, User, Code2, Copy, Check, RefreshCw, Globe } from 'lucide-react';
 
 import { useAuth } from './hooks/useAuth';
 import { useChat } from './hooks/useChat';
@@ -7,73 +7,138 @@ import { useSpeech } from './hooks/useSpeech';
 
 import { LoginScreen } from './components/LoginScreen';
 import { Sidebar } from './components/Sidebar';
-import { VimoCore } from './components/VimoCore';
-import { Terminal } from './components/Terminal';
+import { VuxioAvatar } from './components/VuxioAvatar';
 import { InputBar } from './components/InputBar';
-import type { Attachment } from './types';
+import { FileAttachment } from './components/FileAttachment';
+import type { Attachment, GeneratedFile } from './types';
 
-// ── Ecrã de boas-vindas ──────────────────────────────────────
-const WelcomeScreen: React.FC<{
-  questionCount: number;
-  isSpeaking: boolean;
-  isConnected: boolean;
-  onSuggestion: (text: string) => void;
-}> = ({ questionCount, isSpeaking, isConnected, onSuggestion }) => {
-  const suggestions = [
-    'Escreve código em Python',
-    'Explica um conceito técnico',
-    'Analisa um ficheiro',
-    'Ajuda com um texto',
-  ];
+const MarkdownMessage = lazy(() => import('./components/MarkdownMessage').then(module => ({ default: module.MarkdownMessage })));
+const FilePreviewPanel = lazy(() => import('./components/FilePreviewPanel').then(module => ({ default: module.FilePreviewPanel })));
+
+const CopyButton: React.FC<{ text: string; isCodeMode: boolean }> = ({ text, isCodeMode }) => {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = () => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  return (
+    <button
+      onClick={handleCopy}
+      title="Copiar mensagem"
+      className={`flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-lg transition-colors ${
+        copied
+          ? 'text-green-400 bg-green-500/15'
+          : isCodeMode
+            ? 'text-green-400/50 hover:text-green-400 hover:bg-green-500/10'
+            : 'text-white/30 hover:text-white/70 hover:bg-white/5'
+      }`}
+    >
+      {copied ? <Check size={11} /> : <Copy size={11} />}
+      <span>{copied ? 'Copiado' : 'Copiar'}</span>
+    </button>
+  );
+};
+
+const VuxioSphere: React.FC<{ isConnected: boolean; isSpeaking: boolean; isCodeMode: boolean }> = ({
+  isConnected, isSpeaking, isCodeMode,
+}) => {
+  const dots = Array.from({ length: 90 });
+  const dotColors = isCodeMode
+    ? ['#22c55e', '#4ade80', '#86efac']
+    : ['#a855f7', '#818cf8', '#ec4899'];
+  const glowColor = isCodeMode ? 'rgba(34,197,94,' : 'rgba(168,85,247,';
 
   return (
-    <div className="flex-1 flex flex-col items-center justify-center gap-8 px-6 pb-8">
-      <VimoCore
-        isActive={isConnected}
-        isSpeaking={isSpeaking}
-        questionCount={questionCount}
-        size={180}
-      />
-      <div className="text-center">
-        <h2 className="text-2xl md:text-3xl font-semibold text-[#ececec] mb-2 tracking-tight">
-          Olá, sou o{' '}
-          <span className="text-amber-500 font-bold">Vimo</span>
-        </h2>
-        <p className="text-sm text-white/40 font-light">Como posso ajudar-te hoje?</p>
-      </div>
-      <div className="flex flex-wrap gap-2.5 justify-center max-w-lg">
-        {suggestions.map(s => (
-          <button
-            key={s}
-            onClick={() => onSuggestion(s)}
-            disabled={!isConnected}
-            className="px-4 py-2.5 rounded-xl text-sm text-white/50 border border-amber-500/14 bg-[#1a1a28] hover:bg-amber-500/8 hover:border-amber-500/30 hover:text-amber-400 hover:shadow-[0_0_12px_rgba(245,158,11,0.07)] transition-all duration-150 disabled:opacity-30 disabled:cursor-not-allowed"
-          >
-            {s}
-          </button>
-        ))}
+    <div className="relative flex items-center justify-center" style={{ width: 240, height: 240 }}>
+      {/* Brilho exterior suave */}
+      <div className="absolute inset-0 rounded-full blur-2xl opacity-15 transition-all duration-500"
+        style={{ background: isCodeMode ? '#22c55e' : '#a855f7', transform: isSpeaking ? 'scale(1.15)' : 'scale(1)' }} />
+
+      {/* Anel 1 — horizontal, lento */}
+      <div className={`absolute inset-0 rounded-full border ${isCodeMode ? 'border-green-400/20' : 'border-purple-400/20'}`}
+        style={{ animation: isConnected ? 'VUXIO-orbit 18s linear infinite' : 'none' }} />
+
+      {/* Anel 2 — horizontal reverso, médio */}
+      <div className={`absolute rounded-full border ${isCodeMode ? 'border-emerald-300/15' : 'border-indigo-400/15'}`}
+        style={{ inset: '8%', animation: isConnected ? 'VUXIO-orbit-r 10s linear infinite' : 'none' }} />
+
+      {/* Anel 3 — elíptico (simulação 3D) */}
+      <div className={`absolute rounded-full border ${isCodeMode ? 'border-green-300/10' : 'border-violet-400/10'}`}
+        style={{
+          inset: '4%',
+          transform: 'scaleY(0.28) rotate(20deg)',
+          animation: isConnected ? 'VUXIO-orbit 14s linear infinite' : 'none',
+        }} />
+
+      {/* Anel 4 — elíptico oposto */}
+      <div className={`absolute rounded-full border ${isCodeMode ? 'border-lime-400/8' : 'border-pink-400/8'}`}
+        style={{
+          inset: '12%',
+          transform: 'scaleY(0.28) rotate(-20deg)',
+          animation: isConnected ? 'VUXIO-orbit-r 22s linear infinite' : 'none',
+        }} />
+
+      {/* Esfera de pontos */}
+      <div className="relative" style={{ width: 170, height: 170 }}>
+        {dots.map((_, i) => {
+          const phi = Math.acos(-1 + (2 * i) / dots.length);
+          const theta = Math.sqrt(dots.length * Math.PI) * phi;
+          const x = 85 + 70 * Math.sin(phi) * Math.cos(theta);
+          const y = 85 + 70 * Math.sin(phi) * Math.sin(theta);
+          const z = Math.cos(phi);
+          const opacity = (z + 1) / 2 * 0.9 + 0.08;
+          const r = 1.1 + (z + 1) * 1.3;
+          const color = dotColors[i % 3];
+          return (
+            <div key={i} className="absolute rounded-full" style={{
+              width: r * 2, height: r * 2, left: x - r, top: y - r,
+              background: color, opacity,
+              animation: isConnected
+                ? `VUXIO-twinkle ${1.2 + (i % 7) * 0.35}s ease-in-out ${(i % 5) * 0.2}s infinite`
+                : 'none',
+              boxShadow: z > 0.4 ? `0 0 ${r * 4}px ${color}` : 'none',
+            }} />
+          );
+        })}
+
+        {/* Núcleo central com pulse */}
+        <div className="absolute rounded-full transition-all duration-500" style={{
+          width: isSpeaking ? 60 : 44, height: isSpeaking ? 60 : 44,
+          left: '50%', top: '50%', transform: 'translate(-50%,-50%)',
+          background: `radial-gradient(circle, ${glowColor}0.7) 0%, ${glowColor}0.2) 50%, transparent 75%)`,
+          animation: isConnected ? 'VUXIO-core-pulse 2.5s ease-in-out infinite' : 'none',
+        }} />
       </div>
     </div>
   );
 };
 
-// ── App principal ─────────────────────────────────────────────
 const App: React.FC = () => {
-  const { user, authMode, login, logout, continueAsGuest } = useAuth();
-  const { isSpeaking, isListening, isMuted, speak, toggleMic, toggleMute } = useSpeech();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { user, authMode, isAuthBusy, authError, login, logout, continueAsGuest } = useAuth();
+  const { isSpeaking, isListening, speak, toggleMic } = useSpeech();
   const [isConnected, setIsConnected] = useState(false);
-  const [showTerminal, setShowTerminal] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isMuted, setIsMuted] = useState(false);
+  const [isCodeMode, setIsCodeMode] = useState(false);
+  const [isWebMode,  setIsWebMode]  = useState(false);
   const [currentTime, setCurrentTime] = useState('--:--:--');
   const [currentDate, setCurrentDate] = useState('--/--');
+  const [previewFile, setPreviewFile] = useState<GeneratedFile | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const { logs, chatList, currentChatId, isLoading, addLog, sendMessage, newChat, loadChat, subscribeToChats } =
-    useChat(user, speak);
+  const toggleMute = () => {
+    window.speechSynthesis?.cancel();
+    setIsMuted(prev => !prev);
+  };
 
-  const questionCount = logs.filter(l => l.source === 'USER').length;
-  const hasMessages = logs.length > 0;
+  const { logs, chatList, currentChatId, isLoading, isStreaming, isSearching, sendMessage, regenerate, newChat, loadChat, deleteChat, subscribeToChats } =
+    useChat(user, isMuted ? () => {} : speak, isCodeMode, isWebMode);
 
-  // Relógio
+  const hasMessages = logs.filter(l => l.source !== 'SYSTEM').length > 0;
+
+  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [logs]);
+
   useEffect(() => {
     const tick = () => {
       const now = new Date();
@@ -85,20 +150,12 @@ const App: React.FC = () => {
     return () => clearInterval(id);
   }, []);
 
-  // Conectar quando autenticado ou em modo guest
   useEffect(() => {
     if (authMode === 'loading') return;
-    setIsConnected(false);
-    addLog('SYSTEM', 'A iniciar Vimo AI...');
-    const t = setTimeout(() => {
-      const name = user?.displayName?.split(' ')[0] || 'Comandante';
-      addLog('SYSTEM', `Sistema Online. Bem-vindo${authMode === 'guest' ? '' : `, ${name}`}.`);
-      setIsConnected(true);
-    }, 1200);
-    return () => clearTimeout(t);
+    const id = window.setTimeout(() => setIsConnected(true), 800);
+    return () => window.clearTimeout(id);
   }, [authMode]);
 
-  // Subscrever chats do Firebase
   useEffect(() => {
     if (!user) return;
     const unsub = subscribeToChats(user.uid);
@@ -106,243 +163,229 @@ const App: React.FC = () => {
   }, [user, subscribeToChats]);
 
   const handleSend = useCallback((text: string, attachment: Attachment | null) => {
-    const name = user?.displayName || 'Utilizador';
-    sendMessage(text, attachment, name);
+    sendMessage(text, attachment, user?.displayName || 'Utilizador');
   }, [sendMessage, user]);
 
-  const handleSuggestion = useCallback((text: string) => {
-    handleSend(text, null);
-  }, [handleSend]);
-
-  const handleMicToggle = useCallback(() => {
-    toggleMic((transcript) => {
-      const evt = new CustomEvent('vimo-transcript', { detail: transcript });
-      window.dispatchEvent(evt);
-    });
-  }, [toggleMic]);
-
-  const handleNewChat = useCallback(() => {
-    newChat();
-  }, [newChat]);
-
-  // Ecrã de login
-  if (authMode === 'loading') {
-    return (
-      <div className="flex items-center justify-center h-screen bg-[#0e0e18]">
-        <div className="flex flex-col items-center gap-4">
-          <Cpu size={32} className="text-amber-500 animate-pulse" />
-          <p className="text-white/30 text-sm tracking-widest uppercase">A carregar...</p>
-        </div>
-      </div>
-    );
-  }
-
+  if (authMode === 'loading') return <div className="h-screen flex items-center justify-center bg-[#0e0e18] text-white/20 uppercase tracking-widest text-xs">A carregar...</div>;
   if (authMode !== 'user' && authMode !== 'guest') {
-    return <LoginScreen onLogin={login} onGuest={continueAsGuest} />;
+    return <LoginScreen onLogin={login} onGuest={continueAsGuest} isAuthBusy={isAuthBusy} authError={authError} />;
   }
 
   return (
-    <div className="flex h-screen bg-[#0e0e18] overflow-hidden" style={{ background: 'linear-gradient(160deg, #12131f 0%, #0e0e18 40%, #0e0e18 100%)' }}>
+    <div className={`flex h-screen overflow-hidden ${isCodeMode ? 'code-mode bg-[#080f0b]' : 'bg-[#0b0b1a]'}`}>
+      {/* Overlay (mobile apenas) */}
+      {isSidebarOpen && <div className="md:hidden fixed inset-0 z-40 bg-black/60 backdrop-blur-sm" onClick={() => setIsSidebarOpen(false)} />}
 
-      {/* Sidebar */}
-      <Sidebar
-        isOpen={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-        user={user}
-        isGuest={authMode === 'guest'}
-        chatList={chatList}
-        currentChatId={currentChatId}
-        onNewChat={handleNewChat}
-        onLoadChat={loadChat}
-        onLogout={logout}
-        onLogin={login}
-      />
+      {/* Sidebar retrátil em todos os tamanhos */}
+      <div className={`fixed md:relative inset-y-0 left-0 z-50 shrink-0 transform transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0 md:block' : '-translate-x-full md:hidden'}`}>
+        <Sidebar user={user} isGuest={authMode === 'guest'} chatList={chatList} currentChatId={currentChatId} isConnected={isConnected} isSpeaking={isSpeaking} isListening={isListening} isCodeMode={isCodeMode} onNewChat={() => { newChat(); setIsSidebarOpen(false); }} onLoadChat={(chat) => { loadChat(chat.id); setIsCodeMode(Boolean(chat.isCodeMode)); setIsWebMode(false); setIsSidebarOpen(false); }} onDeleteChat={deleteChat} onLogout={logout} onLogin={login} onToggleMic={() => toggleMic((t) => window.dispatchEvent(new CustomEvent('VUXIO-transcript', { detail: t })))} />
+      </div>
 
-      {/* Main */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-
-        {/* Top bar */}
-        <header className="h-14 flex items-center justify-between px-4 border-b border-white/5 bg-[#13131f]/80 backdrop-blur-sm flex-shrink-0">
+      <div className="flex-1 flex flex-col min-w-0">
+        <header className={`h-[60px] flex items-center justify-between px-4 sm:px-6 backdrop-blur-xl border-b ${isCodeMode ? 'bg-[#080f0b]/80 border-green-500/10' : 'bg-[#0b0b1a]/80 border-white/5'}`}>
+          <div className="flex items-center gap-3">
+            <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 text-white/50 hover:text-white/80 transition-colors"><Menu size={22} /></button>
+            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-mono ${isCodeMode ? 'bg-green-500/10 border-green-500/20 text-green-400/80' : 'bg-purple-500/10 border-purple-500/20 text-white/50'}`}>
+              <span className="w-1.5 h-1.5 rounded-full bg-[#4ade80] shadow-[0_0_6px_#4ade80]" />
+              <span className="font-medium">{isCodeMode ? 'VUXIO::CODE' : 'VUXIO V1.0'}</span>
+              <ChevronDown size={11} />
+            </div>
+            <button onClick={toggleMute} title={isMuted ? 'Ativar voz' : 'Silenciar'} className="p-2 text-white/50 hover:text-white/80 transition-colors">
+              {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
+            </button>
+          </div>
           <div className="flex items-center gap-3">
             <button
-              onClick={() => setSidebarOpen(true)}
-              className="w-8 h-8 rounded-lg flex items-center justify-center text-white/35 hover:text-white/70 hover:bg-white/6 transition-all lg:hidden"
+              onClick={() => { setIsWebMode(prev => !prev); setIsCodeMode(false); }}
+              title={isWebMode ? 'Desativar pesquisa web' : 'Ativar pesquisa web'}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold uppercase tracking-wider border transition-all duration-200 ${
+                isWebMode
+                  ? 'bg-cyan-500/20 border-cyan-500/40 text-cyan-400 shadow-[0_0_12px_rgba(6,182,212,0.2)]'
+                  : 'bg-white/5 border-white/10 text-white/40 hover:text-white/70 hover:bg-white/10'
+              }`}
             >
-              <Menu size={18} />
+              <Globe size={14} />
+              <span className="hidden sm:inline">WEB</span>
             </button>
             <button
-              onClick={() => setSidebarOpen(o => !o)}
-              className="w-8 h-8 rounded-lg hidden lg:flex items-center justify-center text-white/35 hover:text-white/70 hover:bg-white/6 transition-all"
+              onClick={() => { setIsCodeMode(prev => !prev); setIsWebMode(false); }}
+              title={isCodeMode ? 'Mudar para modo normal' : 'Mudar para modo código'}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold uppercase tracking-wider border transition-all duration-200 ${
+                isCodeMode
+                  ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.2)]'
+                  : 'bg-white/5 border-white/10 text-white/40 hover:text-white/70 hover:bg-white/10'
+              }`}
             >
-              <Menu size={18} />
+              <Code2 size={14} />
+              <span className="hidden sm:inline">MOD CODE</span>
             </button>
-
-            {/* Model chip */}
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#1a1a28] border border-amber-500/14 text-xs text-white/45 cursor-default select-none">
-              <span className="w-1.5 h-1.5 rounded-full bg-green-400 shadow-[0_0_6px_#4ade80] animate-pulse" />
-              <span className="font-medium tracking-wide">Vimo V4.0</span>
-              <ChevronDown size={11} className="text-white/25" />
+            <div className={`hidden sm:flex gap-3 px-4 py-2 rounded-xl border text-center ${isCodeMode ? 'bg-green-900/10 border-green-500/15' : 'bg-white/5 border-white/10'}`}>
+              <div><p className={`font-mono text-xs leading-none ${isCodeMode ? 'text-green-400' : 'text-purple-400'}`}>{currentTime}</p><p className="text-[9px] text-white/20 mt-0.5">HORA</p></div>
+              <div className="w-px h-6 bg-white/10" />
+              <div><p className={`font-mono text-xs leading-none ${isCodeMode ? 'text-green-400' : 'text-purple-400'}`}>{currentDate}</p><p className="text-[9px] text-white/20 mt-0.5">HOJE</p></div>
             </div>
-          </div>
-
-          <div className="flex items-center gap-2.5">
-            {/* Clock */}
-            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#1a1a28] border border-amber-500/10">
-              <div className="flex flex-col items-center">
-                <span className="font-mono text-amber-500 text-xs font-medium leading-none">{currentTime}</span>
-                <span className="text-white/20 text-[9px] uppercase tracking-wider mt-0.5">Hora</span>
-              </div>
-              <div className="w-px h-6 bg-white/6" />
-              <div className="flex flex-col items-center">
-                <span className="font-mono text-amber-500 text-xs font-medium leading-none">{currentDate}</span>
-                <span className="text-white/20 text-[9px] uppercase tracking-wider mt-0.5">Hoje</span>
-              </div>
-            </div>
-
-            {/* Terminal toggle */}
-            <button
-              onClick={() => setShowTerminal(o => !o)}
-              className={`hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${showTerminal ? 'bg-amber-500/10 border-amber-500/25 text-amber-400' : 'bg-transparent border-white/6 text-white/30 hover:text-white/55'}`}
+            <a
+              href="https://github.com/coelho26101009-source"
+              target="_blank"
+              rel="noopener noreferrer"
+              title="GitHub do autor"
+              className="p-1.5 text-white/30 hover:text-white/70 transition-colors"
             >
-              <span className="font-mono">&gt;_</span>
-              Terminal
-            </button>
-
-            {/* User avatar */}
-            <div className="w-8 h-8 rounded-full bg-amber-500/12 border border-amber-500/20 flex items-center justify-center text-amber-500 text-xs font-bold cursor-pointer hover:bg-amber-500/18 transition-all">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                <path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" />
+              </svg>
+            </a>
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold overflow-hidden ${
+              isCodeMode
+                ? 'bg-green-500/20 border border-green-500/30 text-green-300'
+                : 'bg-purple-500/20 border border-purple-500/30 text-purple-300'
+            }`}>
               {user?.photoURL
-                ? <img src={user.photoURL} alt="" className="w-full h-full rounded-full" />
-                : (user?.displayName?.charAt(0) || (authMode === 'guest' ? '?' : 'U'))
-              }
+                ? <img src={user.photoURL} className="w-full h-full object-cover rounded-full" alt="avatar" />
+                : user?.displayName?.charAt(0)
+                  ? user.displayName.charAt(0)
+                  : <User size={14} />}
             </div>
           </div>
         </header>
 
-        {/* Content */}
-        <div className="flex-1 flex overflow-hidden min-h-0">
-
-          {/* Chat column */}
-          <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-            <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-amber-900/15">
-              {!hasMessages ? (
-                <WelcomeScreen
-                  questionCount={questionCount}
-                  isSpeaking={isSpeaking}
-                  isConnected={isConnected}
-                  onSuggestion={handleSuggestion}
-                />
+        <main className="flex-1 overflow-y-auto VUXIO-scroll p-4 sm:p-6">
+          {!hasMessages ? (
+            <div className="h-full flex flex-col items-center justify-center gap-6">
+              <VuxioSphere isConnected={isConnected} isSpeaking={isSpeaking} isCodeMode={isCodeMode} />
+              {isCodeMode ? (
+                <div className="font-mono text-sm text-left space-y-1">
+                  <p className="text-green-600/60">{'// VUXIO --mode=programmer --lang=pt-PT'}</p>
+                  <p className="text-green-400/80">{'> Sistema inicializado.'}</p>
+                  <p className="text-green-400/80">{'> Pronto para codificar.'}</p>
+                  <p className="flex items-center gap-1 text-green-400">
+                    <span>{'>'}</span>
+                    <span className="w-2 h-4 bg-green-400 code-cursor inline-block" />
+                  </p>
+                </div>
               ) : (
-                <div className="max-w-2xl mx-auto px-4 py-6">
-                  <div className="flex justify-center mb-6">
-                    <VimoCore
-                      isActive={isConnected}
-                      isSpeaking={isSpeaking}
-                      questionCount={questionCount}
-                      size={90}
-                    />
-                  </div>
-                  <div className="space-y-6">
-                    {logs.map(log => {
-                      if (log.source === 'SYSTEM') {
-                        return (
-                          <p key={log.id} className="text-center text-xs text-white/20 font-mono py-1">
-                            {'// '}{log.text}
-                          </p>
-                        );
-                      }
-                      const isUser = log.source === 'USER';
-                      const isErr = log.source === 'ERROR';
-                      return (
-                        <div key={log.id} className={`flex gap-3 ${isUser ? 'flex-row-reverse' : ''}`}>
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5 border ${
-                            isUser ? 'bg-amber-500/10 border-amber-500/25 text-amber-400' :
-                            isErr ? 'bg-red-500/10 border-red-500/25 text-red-400' :
-                            'bg-gradient-to-br from-amber-500 to-orange-600 border-amber-500/40 text-white'
-                          }`}>
-                            {isUser ? 'TU' : isErr ? '!' : 'V'}
-                          </div>
-                          <div className={`flex flex-col gap-1 max-w-[80%] ${isUser ? 'items-end' : 'items-start'}`}>
-                            <span className="text-[10px] text-white/25 font-mono px-1">
-                              {log.timestamp}{!isUser && ' · Vimo'}
-                            </span>
-                            <div className={`px-4 py-3 rounded-2xl text-sm leading-relaxed border ${
-                              isUser
-                                ? 'bg-[#1a1a28] border-amber-500/15 text-[#ececec] rounded-tr-sm'
-                                : isErr
-                                  ? 'bg-red-900/10 border-red-500/15 text-red-200 rounded-tl-sm'
-                                  : 'bg-transparent border-transparent text-[#d4d0c8] rounded-tl-sm px-0'
-                            }`}>
-                              <div className="prose prose-sm prose-invert max-w-none"
-                                dangerouslySetInnerHTML={{
-                                  __html: log.text
-                                    .replace(/\*\*(.*?)\*\*/g, '<strong class="text-amber-200">$1</strong>')
-                                    .replace(/`([^`]+)`/g, '<code class="bg-black/30 px-1.5 py-0.5 rounded text-amber-300 text-xs border border-amber-500/10">$1</code>')
-                                    .replace(/\n/g, '<br/>')
-                                }}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                    {isLoading && (
-                      <div className="flex gap-3">
-                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 bg-gradient-to-br from-amber-500 to-orange-600 border border-amber-500/40 text-white">V</div>
-                        <div className="flex items-center gap-1 py-3 px-0">
-                          {[0, 0.2, 0.4].map((d, i) => (
-                            <span
-                              key={i}
-                              className="w-1.5 h-1.5 rounded-full bg-amber-500/60"
-                              style={{ animation: `bounce 1.2s ease-in-out infinite ${d}s` }}
-                            />
-                          ))}
-                        </div>
+                <div className="text-center"><h2 className="text-2xl font-bold text-white">Olá, eu sou o <span className="text-purple-500">VUXIO.</span></h2><p className="text-sm text-white/40">Em que posso ajudar?</p></div>
+              )}
+            </div>
+          ) : (
+            <div className="max-w-3xl mx-auto space-y-5">
+              {logs.filter(l => l.source !== 'SYSTEM').map((log, idx, arr) => {
+                const isLast      = idx === arr.length - 1;
+                const isLastVuxio = isLast && log.source === 'VUXIO';
+                const isVuxio     = log.source === 'VUXIO';
+                return (
+                  <div key={log.id} className={`flex gap-3 animate-fade-up ${log.source === 'USER' ? 'flex-row-reverse' : ''}`}>
+                    {/* Avatar — stays aligned to top of bubble */}
+                    {isVuxio && (
+                      <div className="flex flex-col items-center gap-1 shrink-0">
+                        <VuxioAvatar size={36} isConnected={isConnected} isSpeaking={isSpeaking && isLast} isCodeMode={isCodeMode} />
                       </div>
                     )}
+
+                    {/* group wraps bubble + action bar so hover works on both */}
+                    <div className={`group max-w-[85%] flex flex-col ${log.source === 'USER' ? 'items-end' : 'items-start'}`}>
+                      <span className="text-[10px] text-white/20 mb-1">{log.timestamp}</span>
+
+                      {/* Message bubble */}
+                      <div className={`px-4 py-3 text-sm rounded-2xl ${
+                        log.source === 'USER'
+                          ? isCodeMode
+                            ? 'bg-green-600/15 border border-green-500/25 text-white font-mono'
+                            : 'bg-purple-600/20 border border-purple-500/30 text-white'
+                          : isCodeMode
+                            ? 'bg-green-900/10 border border-green-500/15 text-green-50'
+                            : 'bg-white/5 border border-white/10 text-gray-200'
+                      }`}>
+                        <Suspense fallback={<span className="whitespace-pre-wrap">{log.text}</span>}>
+                          <MarkdownMessage text={log.text} isCodeMode={isCodeMode} />
+                        </Suspense>
+                        {log.sources && log.sources.length > 0 && (
+                          <div className="mt-3 pt-2 border-t border-white/10 text-xs space-y-1">
+                            <p className="text-white/40 font-medium">Fontes</p>
+                            {log.sources.map(source => (
+                              <a key={source.url} href={source.url} target="_blank" rel="noopener noreferrer" className="block truncate text-cyan-400 hover:text-cyan-300 underline">
+                                {source.title || source.url}
+                              </a>
+                            ))}
+                          </div>
+                        )}
+                        {log.file && (
+                          <FileAttachment file={log.file} isCodeMode={isCodeMode} onOpen={() => setPreviewFile(log.file!)} />
+                        )}
+                        {isStreaming && isLastVuxio && (
+                          <span className={`inline-block w-[2px] h-[1em] ml-0.5 align-middle ${isCodeMode ? 'bg-green-400' : 'bg-purple-400'}`}
+                            style={{ animation: 'VUXIO-cursor 0.8s ease-in-out infinite' }} />
+                        )}
+                      </div>
+
+                      {/* Action bar — below bubble, visible on hover */}
+                      {isVuxio && log.text && (
+                        <div className="flex items-center gap-1 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                          <CopyButton text={log.text} isCodeMode={isCodeMode} />
+                          {isLastVuxio && !isLoading && !isStreaming && (
+                            <button
+                              onClick={() => regenerate(user?.displayName || 'Utilizador')}
+                              className={`flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-lg transition-colors ${
+                                isCodeMode
+                                  ? 'text-green-400/50 hover:text-green-400 hover:bg-green-500/10'
+                                  : 'text-white/30 hover:text-white/70 hover:bg-white/5'
+                              }`}
+                            >
+                              <RefreshCw size={11} />
+                              Regenerar
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Waiting indicator (before first streaming token) */}
+              {isLoading && !isStreaming && (
+                <div className="flex gap-3 items-center animate-fade-up">
+                  <VuxioAvatar size={36} isConnected={isConnected} isSpeaking={true} isCodeMode={isCodeMode} />
+                  <div className={`px-4 py-3 rounded-2xl text-sm flex items-center gap-2 ${
+                    isSearching
+                      ? 'bg-cyan-900/10 border border-cyan-500/20 text-cyan-400/70'
+                      : isCodeMode
+                        ? 'bg-green-900/10 border border-green-500/15 font-mono text-green-400/70'
+                        : 'bg-white/5 border border-white/10 text-white/40'
+                  }`}>
+                    {isSearching && <Globe size={13} className="shrink-0" />}
+                    <span>{isSearching ? 'A pesquisar na web' : 'A pensar'}</span>
+                    <span className="flex gap-1 items-center">
+                      {[0, 1, 2].map(i => (
+                        <span key={i} className={`w-1.5 h-1.5 rounded-full inline-block ${isSearching ? 'bg-cyan-400' : isCodeMode ? 'bg-green-400' : 'bg-white/40'}`}
+                          style={{ animation: `VUXIO-twinkle 1.1s ease-in-out ${i * 0.22}s infinite` }} />
+                      ))}
+                    </span>
                   </div>
                 </div>
               )}
-            </div>
-
-            <InputBar
-              onSend={handleSend}
-              isLoading={isLoading}
-              isConnected={isConnected}
-              isMuted={isMuted}
-              isListening={isListening}
-              onToggleMute={toggleMute}
-              onToggleMic={handleMicToggle}
-            />
-          </div>
-
-          {/* Terminal panel */}
-          {showTerminal && (
-            <div className="hidden md:flex w-[400px] xl:w-[480px] shrink-0 border-l border-white/5 flex-col">
-              <Terminal logs={logs} />
+              <div ref={messagesEndRef} />
             </div>
           )}
-        </div>
+        </main>
+        <div className="p-4 sm:p-6"><InputBar onSend={handleSend} isLoading={isLoading} isConnected={isConnected} isCodeMode={isCodeMode} /></div>
       </div>
 
+      {/* File preview panel + click-away backdrop */}
+      {previewFile && <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm" onClick={() => setPreviewFile(null)} />}
+      <Suspense fallback={null}>
+        <FilePreviewPanel file={previewFile} isCodeMode={isCodeMode} onClose={() => setPreviewFile(null)} />
+      </Suspense>
       <style>{`
-        @keyframes bounce {
-          0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
-          40% { transform: translateY(-5px); opacity: 1; }
-        }
-        @keyframes helios-rotate-cw { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        @keyframes helios-rotate-ccw { from { transform: rotate(360deg); } to { transform: rotate(0deg); } }
-        @keyframes helios-nucleus-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
-        @keyframes helios-star-tw {
-          0%, 100% { opacity: 0.65; transform: translate(-50%, -50%) scale(1); }
-          50% { opacity: 1; transform: translate(-50%, -50%) scale(1.5); }
-        }
-        .scrollbar-none { scrollbar-width: none; }
-        .scrollbar-none::-webkit-scrollbar { display: none; }
-        .scrollbar-thin { scrollbar-width: thin; scrollbar-color: rgba(245,158,11,0.1) transparent; }
-        .scrollbar-thin::-webkit-scrollbar { width: 4px; }
-        .scrollbar-thin::-webkit-scrollbar-thumb { background: rgba(245,158,11,0.1); border-radius: 4px; }
-        .prose-invert strong { color: #fde68a; }
-        .prose-invert code { color: #fcd34d; }
+        @keyframes VUXIO-orbit { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes VUXIO-orbit-r { from { transform: rotate(360deg); } to { transform: rotate(0deg); } }
+        @keyframes VUXIO-twinkle { 0%, 100% { opacity: 0.5; transform: scale(1); } 50% { opacity: 1; transform: scale(1.5); } }
+        @keyframes VUXIO-core-pulse { 0%, 100% { transform: translate(-50%,-50%) scale(1); opacity: 0.7; } 50% { transform: translate(-50%,-50%) scale(1.35); opacity: 1; } }
+        .VUXIO-scroll::-webkit-scrollbar { width: 4px; }
+        .VUXIO-scroll::-webkit-scrollbar-thumb { background: rgba(124,58,237,0.2); border-radius: 4px; }
+        .animate-fade-up { animation: fade-up 0.3s ease-out forwards; }
+        @keyframes fade-up { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes VUXIO-cursor { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
       `}</style>
     </div>
   );

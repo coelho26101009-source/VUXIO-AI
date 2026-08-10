@@ -1,11 +1,9 @@
-# ═══════════════════════════════════════════════════════════
-#  VIMO AI — .gitignore
-#  NUNCA enviar para o GitHub os ficheiros abaixo!
-# ═══════════════════════════════════════════════════════════
 
-# ──────────────────────────────────────────────────────────
-#  🔐 SEGURANÇA — Variáveis de ambiente e chaves secretas
-# ──────────────────────────────────────────────────────────
+#  VUXIO AI — .gitignore
+
+
+#  Ambient variables and secrets
+
 .env
 .env.local
 .env.development
@@ -15,31 +13,30 @@
 .env.production
 .env.production.local
 *.env
+.env.example
 
-# Ficheiros de configuração com chaves (Firebase, etc.)
+# key config
 firebase-config.js
 firebase-config.ts
 serviceAccountKey.json
 google-services.json
 GoogleService-Info.plist
 
-# ──────────────────────────────────────────────────────────
-#  📦 Dependências (geradas automaticamente via npm install)
-# ──────────────────────────────────────────────────────────
+# Dependencies
 node_modules
 node_modules/
 
-# ──────────────────────────────────────────────────────────
-#  🏗️ Build outputs (gerados via npm run build)
-# ──────────────────────────────────────────────────────────
+
+#  Build outputs 
+
 dist
 dist-ssr
 build
 out
 
-# ──────────────────────────────────────────────────────────
-#  📝 Logs
-# ──────────────────────────────────────────────────────────
+
+#  Logs
+
 logs
 *.log
 npm-debug.log*
@@ -48,9 +45,9 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-# ──────────────────────────────────────────────────────────
-#  💻 Editores e IDEs
-# ──────────────────────────────────────────────────────────
+
+#   IDEs
+
 .vscode/*
 !.vscode/extensions.json
 .idea
@@ -60,16 +57,16 @@ lerna-debug.log*
 *.sln
 *.sw?
 
-# ──────────────────────────────────────────────────────────
-#  🍎 Sistema operativo
-# ──────────────────────────────────────────────────────────
+
+#  OS
+
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# ──────────────────────────────────────────────────────────
-#  ⚡ Vite / TypeScript
-# ──────────────────────────────────────────────────────────
+
+#  Vite / TypeScript
+
 *.local
 tsconfig.tsbuildinfo
 
@@ -78,3 +75,5 @@ tsconfig.tsbuildinfo
 .dev.vars*
 !.dev.vars.example
 !.env.example
+# Local assistant settings
+.claude/
