@@ -14,7 +14,7 @@ const MAX_MCP_SERVERS = 5;
 const userDoc = (uid: string) => doc(db, 'users', uid);
 const makeId = () => crypto.randomUUID();
 
-const DEFAULT_SETTINGS: Settings = { defaultMode: 'standard', temperature: 0.7, memoryEnabled: true };
+const DEFAULT_SETTINGS: Settings = { defaultMode: 'standard', temperature: 0.7, memoryEnabled: true, selectedModel: 'auto' };
 
 // Firestore arrays are always overwritten wholesale, never merged element by
 // element (true for both setDoc-merge and updateDoc) -- every mutation here

@@ -82,9 +82,9 @@ test('standard mode asks Groq for a model Groq still serves', async () => {
   const { model } = JSON.parse(groq.options.body);
   // llama-3.2-11b-vision-preview and llama-3.2-90b-vision-preview are
   // decommissioned; asking for either is a 400 at runtime, which is exactly
-  // the bug this guards against reintroducing.
+  // the bug this guards against reintroducing. Which exact model Auto picks
+  // for this message is covered by the model-selection tests below.
   assert.doesNotMatch(model, /vision-preview$/, `${model} is a decommissioned Groq model`);
-  assert.equal(model, 'openai/gpt-oss-120b');
 });
 
 test('web mode authenticates to Tavily with a Bearer header, not a body key', async () => {
@@ -163,12 +163,32 @@ test('an attachment missing mimeType is rejected cleanly, not with a raw TypeErr
 test('the system prompt states VUXIO\'s real model instead of letting it guess', async () => {
   const calls = await runWithStubbedFetch(chat, '10.1.0.1');
   const groq = calls.find((call) => call.url.includes('api.groq.com'));
-  const system = JSON.parse(groq.options.body).messages[0].content;
+  const { model, messages } = JSON.parse(groq.options.body);
+  const system = messages[0].content;
+  // "ola" is short enough that Auto routes it to the fast model, not the
+  // flagship -- the prompt must name whichever model this request actually
+  // resolves to, not a hardcoded constant that can drift from what Groq
+  // actually receives.
+  assert.equal(model, 'llama-3.1-8b-instant');
   // Guards against the hallucination this was added to fix: asked "what
   // model do you run on", VUXIO answered "GPT-4-turbo" with nothing in the
   // prompt telling it otherwise.
-  assert.match(system, /openai\/gpt-oss-120b/);
+  assert.match(system, /llama-3\.1-8b-instant/);
   assert.match(system, /qwen\/qwen3\.6-27b/);
+});
+
+test('the system prompt still states the real model under a non-default selectedModel', async () => {
+  // Picks a model the request would never resolve to by coincidence (Auto's
+  // own default for this message is the fast model, per the test above) --
+  // the only way this passes is if the prompt is actually built from the
+  // resolved model rather than a hardcoded one.
+  const calls = await runWithStubbedFetch({ ...chat, selectedModel: 'llama-3.3-70b-versatile' }, '10.1.0.2');
+  const groq = calls.find((call) => call.url.includes('api.groq.com'));
+  const { model, messages } = JSON.parse(groq.options.body);
+  const system = messages[0].content;
+  assert.equal(model, 'llama-3.3-70b-versatile');
+  assert.match(system, /llama-3\.3-70b-versatile/);
+  assert.doesNotMatch(system, /openai\/gpt-oss-120b/);
 });
 
 // --- temperature -----------------------------------------------------------
@@ -582,6 +602,72 @@ test('MCP discovery is skipped for an image attachment, since its tools would be
     globalThis.fetch = realFetch;
     if (realGroqKey === undefined) delete process.env.GROQ_API_KEY; else process.env.GROQ_API_KEY = realGroqKey;
   }
+});
+
+// --- model selection (selectedModel / Auto routing) -------------------------
+
+test('Auto picks the fast model for a short greeting', async () => {
+  const calls = await runWithStubbedFetch({ mode: 'standard', messages: [{ role: 'user', content: 'ola' }] }, '10.4.0.1');
+  const groq = calls.find((call) => call.url.includes('api.groq.com'));
+  assert.equal(JSON.parse(groq.options.body).model, 'llama-3.1-8b-instant');
+});
+
+test('Auto picks the flagship model for a long, code-fenced message', async () => {
+  const long = `\`\`\`\n${'x'.repeat(250)}\n\`\`\``;
+  const calls = await runWithStubbedFetch({ mode: 'standard', messages: [{ role: 'user', content: long }] }, '10.4.0.2');
+  const groq = calls.find((call) => call.url.includes('api.groq.com'));
+  assert.equal(JSON.parse(groq.options.body).model, 'openai/gpt-oss-120b');
+});
+
+test('Auto picks the flagship model for Code mode regardless of message length', async () => {
+  const calls = await runWithStubbedFetch({ mode: 'code', messages: [{ role: 'user', content: 'oi' }] }, '10.4.0.3');
+  const groq = calls.find((call) => call.url.includes('api.groq.com'));
+  assert.equal(JSON.parse(groq.options.body).model, 'openai/gpt-oss-120b');
+});
+
+test('an image attachment forces the vision model even when selectedModel requests another one', async () => {
+  const calls = await runWithStubbedFetch({
+    ...chat,
+    selectedModel: 'llama-3.1-8b-instant',
+    attachment: { base64: Buffer.from('x').toString('base64'), mimeType: 'image/png' },
+  }, '10.4.0.4');
+  const groq = calls.find((call) => call.url.includes('api.groq.com'));
+  assert.equal(JSON.parse(groq.options.body).model, 'qwen/qwen3.6-27b');
+});
+
+test('a manual selectedModel is honored over Auto routing', async () => {
+  const calls = await runWithStubbedFetch({ ...chat, selectedModel: 'llama-3.3-70b-versatile' }, '10.4.0.5');
+  const groq = calls.find((call) => call.url.includes('api.groq.com'));
+  assert.equal(JSON.parse(groq.options.body).model, 'llama-3.3-70b-versatile');
+});
+
+test('an invalid selectedModel is rejected before contacting Groq', async () => {
+  const res = response();
+  // groq/compound is a real Groq model id, but not one this endpoint ever
+  // offers -- it 400s on any request carrying custom tools, which every mode
+  // sends (create_file). Confirms it's excluded from the allowlist too, not
+  // just from Auto's own routing.
+  await handler({ method: 'POST', headers: { 'x-forwarded-for': '10.4.0.6' }, body: { ...chat, selectedModel: 'groq/compound' } }, res);
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.body.error, 'Modelo inválido.');
+});
+
+test('the model SSE event reports which model actually answered', async () => {
+  const realFetch = globalThis.fetch;
+  const realGroqKey = process.env.GROQ_API_KEY;
+  process.env.GROQ_API_KEY = 'test-groq-key';
+  globalThis.fetch = async () => ({ ok: true, status: 200, body: groqStream() });
+
+  let wrote = '';
+  const res = response();
+  res.write = (chunk) => { wrote += chunk; };
+  try {
+    await handler({ method: 'POST', headers: { 'x-forwarded-for': '10.4.0.7' }, body: { ...chat, selectedModel: 'llama-3.3-70b-versatile' } }, res);
+  } finally {
+    globalThis.fetch = realFetch;
+    if (realGroqKey === undefined) delete process.env.GROQ_API_KEY; else process.env.GROQ_API_KEY = realGroqKey;
+  }
+  assert.match(wrote, /event: model\ndata: \{"model":"llama-3\.3-70b-versatile"\}/);
 });
 
 // --- <think> filtering -------------------------------------------------

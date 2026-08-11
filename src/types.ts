@@ -18,6 +18,9 @@ export interface LogMessage {
   timestamp: string;
   sources?: SearchSource[];
   file?: GeneratedFile;
+  // Which Groq model actually answered -- only meaningful for VUXIO replies,
+  // and always set (even under Auto routing) via the backend's `model` SSE event.
+  usedModel?: string;
 }
 
 export interface Chat {
@@ -48,8 +51,14 @@ export interface McpServer {
   url: string;
 }
 
+// groq/compound and groq/compound-mini are deliberately excluded: they reject
+// any request carrying custom tools (create_file, offered in every mode) with
+// a 400 that fails the whole completion -- see api/chat.js's COMPOUND_MODEL guard.
+export type SelectableModel = 'auto' | 'openai/gpt-oss-120b' | 'openai/gpt-oss-20b' | 'llama-3.3-70b-versatile' | 'llama-3.1-8b-instant';
+
 export interface Settings {
   defaultMode: 'standard' | 'code';
   temperature: number;
   memoryEnabled: boolean;
+  selectedModel: SelectableModel;
 }

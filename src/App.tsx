@@ -144,6 +144,7 @@ const App: React.FC = () => {
       temperature: settings.temperature,
       memories: settings.memoryEnabled ? memories.map(memory => memory.text) : [],
       mcpServers: mcpServers.map(({ name, url }) => ({ name, url })),
+      selectedModel: settings.selectedModel,
     });
 
   const hasMessages = logs.filter(l => l.source !== 'SYSTEM').length > 0;

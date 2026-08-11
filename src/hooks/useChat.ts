@@ -20,6 +20,7 @@ const normaliseMessage = (data: Record<string, unknown>): LogMessage => ({
   timestamp: (data.timestamp as string) ?? '',
   sources: data.sources as SearchSource[] | undefined,
   file: data.file as GeneratedFile | undefined,
+  usedModel: data.usedModel as string | undefined,
 });
 
 // Triggers a real browser download via a throwaway object URL -- revoked
@@ -39,7 +40,8 @@ async function streamReply(
   onChunk: (text: string) => void,
   onSources: (sources: SearchSource[]) => void,
   onFile: (file: GeneratedFile) => void,
-): Promise<{ text: string; sources?: SearchSource[]; file?: GeneratedFile }> {
+  onModel: (model: string) => void,
+): Promise<{ text: string; sources?: SearchSource[]; file?: GeneratedFile; model?: string }> {
   const response = await fetch('/api/chat', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
   });
@@ -54,6 +56,7 @@ async function streamReply(
   let full = '';
   let sources: SearchSource[] | undefined;
   let file: GeneratedFile | undefined;
+  let model: string | undefined;
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -68,16 +71,21 @@ async function streamReply(
       if (type === 'chunk') { full += data as string; onChunk(full); }
       if (type === 'sources') { sources = data as SearchSource[]; onSources(sources); }
       if (type === 'file') { file = data as GeneratedFile; onFile(file); }
+      // Sent by the backend once it has decided which model actually answers
+      // this turn -- the only way the client learns that under Auto routing,
+      // since the routing decision itself is server-side (see api/chat.js).
+      if (type === 'model') { model = (data as { model: string }).model; onModel(model); }
       if (type === 'error') throw new Error(data as string);
     }
   }
-  return { text: full, sources, file };
+  return { text: full, sources, file, model };
 }
 
 interface ChatOptions {
   temperature: number;
   memories: string[];
   mcpServers: { name: string; url: string }[];
+  selectedModel: string;
 }
 
 export const useChat = (user: User | null, onReply: (text: string) => void, codeMode = false, webMode = false, options?: ChatOptions) => {
@@ -153,6 +161,7 @@ export const useChat = (user: User | null, onReply: (text: string) => void, code
         temperature: optionsRef.current?.temperature,
         memories: optionsRef.current?.memories,
         mcpServers: optionsRef.current?.mcpServers,
+        selectedModel: optionsRef.current?.selectedModel,
         messages: [...history.slice(-MAX_HISTORY), userMessage].filter(message => message.source !== 'SYSTEM' && message.source !== 'ERROR').map(message => ({ role: message.source === 'VUXIO' ? 'assistant' : 'user', content: message.text })),
         attachment: attachment ? { base64: attachment.base64, mimeType: attachment.file.type, name: attachment.file.name, text: attachment.text } : undefined,
       }, partial => {
@@ -160,7 +169,8 @@ export const useChat = (user: User | null, onReply: (text: string) => void, code
         setIsStreaming(true);
         setLogs(previous => previous.map(message => message.id === replaceId ? { ...message, text: partial } : message));
       }, sources => setLogs(previous => previous.map(message => message.id === replaceId ? { ...message, sources } : message)),
-      file => setLogs(previous => previous.map(message => message.id === replaceId ? { ...message, file } : message)));
+      file => setLogs(previous => previous.map(message => message.id === replaceId ? { ...message, file } : message)),
+      usedModel => setLogs(previous => previous.map(message => message.id === replaceId ? { ...message, usedModel } : message)));
     } finally {
       setIsSearching(false);
     }
@@ -175,7 +185,7 @@ export const useChat = (user: User | null, onReply: (text: string) => void, code
     setIsLoading(true);
     try {
       const response = await requestReply(history, userMessage, attachment, userName, placeholder.id);
-      const reply = { ...placeholder, text: response.text, ...(response.sources ? { sources: response.sources } : {}), ...(response.file ? { file: response.file } : {}) };
+      const reply = { ...placeholder, text: response.text, ...(response.sources ? { sources: response.sources } : {}), ...(response.file ? { file: response.file } : {}), ...(response.model ? { usedModel: response.model } : {}) };
       await persist(userMessage, reply, codeModeRef.current);
       onReply(response.text);
     } catch (error) {
@@ -200,7 +210,7 @@ export const useChat = (user: User | null, onReply: (text: string) => void, code
     setIsStreaming(true);
     try {
       const response = await requestReply(history, userMessage, null, userName, placeholder.id);
-      const reply = { ...placeholder, text: response.text, ...(response.sources ? { sources: response.sources } : {}), ...(response.file ? { file: response.file } : {}) };
+      const reply = { ...placeholder, text: response.text, ...(response.sources ? { sources: response.sources } : {}), ...(response.file ? { file: response.file } : {}), ...(response.model ? { usedModel: response.model } : {}) };
       const uid = userRef.current?.uid;
       const chatId = chatIdRef.current;
       if (uid && chatId) {

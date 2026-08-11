@@ -1,6 +1,16 @@
 import React, { useState } from 'react';
 import { X, Trash2, Plus, Code2, MessageSquare } from 'lucide-react';
-import type { Settings, Memory, McpServer } from '../types';
+import type { Settings, Memory, McpServer, SelectableModel } from '../types';
+
+// groq/compound and groq/compound-mini are not offered here -- see the
+// SelectableModel comment in types.ts for why.
+const MODEL_OPTIONS: { value: SelectableModel; label: string; hint: string }[] = [
+  { value: 'auto', label: 'Automático (recomendado)', hint: 'Escolhe o modelo mais adequado a cada mensagem.' },
+  { value: 'openai/gpt-oss-120b', label: 'GPT-OSS 120B', hint: 'Modelo principal -- mais capaz, respostas mais lentas.' },
+  { value: 'openai/gpt-oss-20b', label: 'GPT-OSS 20B', hint: 'Alternativa mais rápida e leve.' },
+  { value: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B', hint: 'Modelo geral de maior dimensão.' },
+  { value: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B Instant', hint: 'O mais rápido, ideal para trocas simples.' },
+];
 
 interface SettingsPanelProps {
   isOpen: boolean;
@@ -120,6 +130,25 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
             <span className="text-xs font-mono text-white/50 w-8 text-right">{settings.temperature.toFixed(1)}</span>
           </div>
           <p className="text-[11px] text-white/25 mt-2">Mais baixo: respostas mais previsíveis. Mais alto: mais variadas.</p>
+        </Section>
+
+        <Section title="Modelo">
+          <div className="space-y-1.5">
+            {MODEL_OPTIONS.map(option => (
+              <button
+                key={option.value}
+                onClick={() => onUpdateSettings({ selectedModel: option.value })}
+                className={`w-full text-left px-3 py-2 rounded-lg border transition-colors ${
+                  settings.selectedModel === option.value ? 'text-white' : 'text-white/40 border-white/10 hover:text-white/70'
+                }`}
+                style={settings.selectedModel === option.value ? { background: `${accent}33`, borderColor: `${accent}66` } : undefined}
+              >
+                <p className="text-xs font-medium">{option.label}</p>
+                <p className="text-[11px] text-white/25 mt-0.5">{option.hint}</p>
+              </button>
+            ))}
+          </div>
+          <p className="text-[11px] text-white/25 mt-2">Uma imagem anexada usa sempre o modelo de visão, independentemente desta escolha.</p>
         </Section>
 
         <Section title="Memória">

@@ -16,6 +16,17 @@ const CODE_FALLBACK_MODEL = TEXT_MODEL;
 // Referenced only by the tools guard in streamGroq below -- kept as its own
 // constant since it's no longer the same value as CODE_FALLBACK_MODEL.
 const COMPOUND_MODEL = 'groq/compound';
+
+// Models a client can pick manually (plus 'auto') or that the Auto heuristic
+// below can route to. groq/compound and groq/compound-mini are deliberately
+// absent from both: they 400 on any request carrying custom tools, and
+// create_file is offered in every mode (see the toolsForModel guard in
+// streamGroq).
+const FAST_MODEL = 'llama-3.1-8b-instant';
+const LARGE_MODEL = 'llama-3.3-70b-versatile';
+const LIGHT_MODEL = 'openai/gpt-oss-20b';
+const SELECTABLE_MODELS = ['auto', TEXT_MODEL, LIGHT_MODEL, LARGE_MODEL, FAST_MODEL];
+
 // Available in every mode (used to be Code/Web only, see the fileToolNote comment
 // below for why that turned out wrong).
 const TOOLS = [{
@@ -82,10 +93,15 @@ const LANGUAGE_RULE = 'Responde sempre no mesmo idioma que o utilizador usar na 
 // Without this, asked "que modelo és", the model guesses from its own training
 // data and answers things like "GPT-4-turbo" -- a hallucination, since it has
 // no built-in awareness of which model or provider is actually serving it here.
-const IDENTITY_RULE = `Corres no modelo ${TEXT_MODEL}, servido pela Groq. Pedidos com imagem anexada usam ${VISION_MODEL} para visão. Nunca inventes outro nome de modelo (ex: GPT-4, GPT-4-turbo, Claude, Gemini) -- se te perguntarem sobre o teu funcionamento interno e não tiveres a certeza de algo, diz isso abertamente em vez de inventar uma resposta.`;
+// Takes the model actually resolved for this request (see pickTextModel and the
+// handler) instead of a hardcoded constant: Auto routing and a manual
+// selectedModel can both send Groq a model other than TEXT_MODEL, and a
+// hardcoded name here would restate the exact hallucination this rule exists
+// to prevent, just from the prompt instead of the model's training data.
+const identityRule = (model) => `Corres no modelo ${model}, servido pela Groq. Pedidos com imagem anexada usam ${VISION_MODEL} para visão. Nunca inventes outro nome de modelo (ex: GPT-4, GPT-4-turbo, Claude, Gemini) -- se te perguntarem sobre o teu funcionamento interno e não tiveres a certeza de algo, diz isso abertamente em vez de inventar uma resposta.`;
 
-const codePrompt = (userName) => `Tu és o VUXIO em modo PROGRAMADOR. Utilizador: ${userName}.
-${LANGUAGE_RULE} ${IDENTITY_RULE} Sê direto e técnico, sem floreados.
+const codePrompt = (userName, model) => `Tu és o VUXIO em modo PROGRAMADOR. Utilizador: ${userName}.
+${LANGUAGE_RULE} ${identityRule(model)} Sê direto e técnico, sem floreados.
 
 Comporta-te como um engenheiro sénior a fazer manutenção a longo prazo, não como quem quer parecer inteligente:
 - Percebe o problema real antes de responder. Se o pedido for ambíguo ou faltar contexto, pergunta em vez de assumir.
@@ -96,7 +112,7 @@ Comporta-te como um engenheiro sénior a fazer manutenção a longo prazo, não 
 - Separa observações de recomendações -- diz claramente o que é facto ("isto está a fazer X") do que é sugestão tua ("sugiro mudar para Y, porque Z").
 - Se não tiveres a certeza de algo, diz isso abertamente em vez de inventar uma resposta confiante.`;
 
-const standardPrompt = (userName) => `Tu és o VUXIO, um assistente simpático criado pelo Simão. Utilizador: ${userName}. ${LANGUAGE_RULE} ${IDENTITY_RULE} Tom caloroso e direto. Código só se pedido explicitamente. Mantém a resposta curta, salvo pedido de detalhe.`;
+const standardPrompt = (userName, model) => `Tu és o VUXIO, um assistente simpático criado pelo Simão. Utilizador: ${userName}. ${LANGUAGE_RULE} ${identityRule(model)} Tom caloroso e direto. Código só se pedido explicitamente. Mantém a resposta curta, salvo pedido de detalhe.`;
 
 const parseBody = (body) => typeof body === 'string' ? JSON.parse(body) : body;
 
@@ -233,6 +249,9 @@ const validate = (body) => {
   }
   if (body.temperature !== undefined && (typeof body.temperature !== 'number' || !Number.isFinite(body.temperature) || body.temperature < 0 || body.temperature > 2)) {
     throw new Error('Temperatura inválida.');
+  }
+  if (body.selectedModel !== undefined && !SELECTABLE_MODELS.includes(body.selectedModel)) {
+    throw new Error('Modelo inválido.');
   }
   if (body.memories !== undefined) {
     if (!Array.isArray(body.memories) || body.memories.length > MAX_MEMORIES) throw new Error('Memórias inválidas.');
@@ -423,7 +442,7 @@ async function callMcpTool(tool, args) {
   }
 }
 
-async function streamGroq({ messages, system, attachment, onChunk, onFile, signal, textModel = TEXT_MODEL, tools, temperature = 0.7, mcpToolsByName = {} }) {
+async function streamGroq({ messages, system, attachment, onChunk, onFile, onModel, signal, textModel = TEXT_MODEL, tools, temperature = 0.7, mcpToolsByName = {} }) {
   if (!process.env.GROQ_API_KEY) throw new Error('O serviço de IA não está configurado.');
   // A text/code file (.c, .py, ...) is read client-side as plain text rather than
   // base64 -- it goes straight into the message as text, not through the
@@ -449,6 +468,13 @@ async function streamGroq({ messages, system, attachment, onChunk, onFile, signa
     },
   ];
   const model = isImageAttachment ? VISION_MODEL : textModel;
+  // Fired only once the request has passed every check above that can still
+  // reject it outright (missing key, image attachment that isn't actually an
+  // image) -- announcing the model any earlier, e.g. in the handler before
+  // streamGroq runs, sent a real model name over SSE for a request about to
+  // fail anyway (a PDF attachment in Standard mode), immediately followed by
+  // event: error.
+  onModel?.(model);
   // Not offered alongside an image attachment: the vision model is a separate,
   // narrower model from the one tools were designed against, and mixing
   // multimodal input with tool-calling is exactly the kind of combination
@@ -582,6 +608,35 @@ async function runCompletion(apiMessages, { model, temperature, tools, signal, o
   return { content, toolCalls: Object.values(toolCalls) };
 }
 
+// Auto routing for Standard mode, no attachment (Code mode and image
+// attachments are decided by pickTextModel/streamGroq before this runs).
+// Bucketed by crude length/shape signals, not real complexity classification
+// -- a short but technical message ("prove P=NP") is under-routed to the fast
+// model, and there is no attempt here to detect "math-heavy" content beyond
+// a code fence. Thresholds: under 50 chars with no code fence -> fastest
+// model; 50-200 chars -> mid-size model; 200+ chars or a code fence -> flagship.
+const autoStandardModel = (content) => {
+  if (content.length >= 200 || content.includes('```')) return TEXT_MODEL;
+  if (content.length >= 50) return LARGE_MODEL;
+  return FAST_MODEL;
+};
+
+// Picks the text model for this request (an image attachment overrides this
+// with VISION_MODEL separately -- see isImageAttachment in the handler and
+// streamGroq's own model selection). Manual selection wins over Auto
+// regardless of mode; Auto itself still special-cases Code mode, since a
+// flagship model is worth the latency there.
+const pickTextModel = (body) => {
+  if (body.selectedModel && body.selectedModel !== 'auto') return body.selectedModel;
+  if (body.mode === 'code') return CODE_FALLBACK_MODEL;
+  // A non-image attachment (an image forces VISION_MODEL separately, see
+  // above) carries unpredictable, often technical content the user's short
+  // accompanying message doesn't reflect -- route straight to the flagship
+  // model instead of bucketing by that message's length alone.
+  if (body.attachment) return TEXT_MODEL;
+  return autoStandardModel(body.messages.at(-1).content);
+};
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Método não permitido.' });
   if (isRateLimited(clientIp(req))) return res.status(429).json({ error: 'Demasiados pedidos. Tenta novamente dentro de um minuto.' });
@@ -590,6 +645,13 @@ export default async function handler(req, res) {
     res.on('close', () => controller.abort());
     const body = parseBody(req.body);
     validate(body);
+    // Resolved before the system prompt is built (below), not after: the prompt's
+    // IDENTITY_RULE needs to name the model that will actually answer, and
+    // streamGroq itself re-derives this same isImageAttachment -> VISION_MODEL
+    // override when it builds the real request.
+    const isImageAttachment = body.attachment && typeof body.attachment.text !== 'string';
+    const textModel = pickTextModel(body);
+    const resolvedModel = isImageAttachment ? VISION_MODEL : textModel;
     const latestMessage = body.messages.at(-1).content;
     const results = body.webMode ? await getWebContext(latestMessage) : [];
     const webContext = results.length ? `\n\nResultados de pesquisa web:\n${results.map((r, i) => `[${i + 1}] ${r.title}\n${r.url}\n${r.content}`).join('\n\n')}\n\nEstilo de resposta com pesquisa web:
@@ -619,13 +681,12 @@ export default async function handler(req, res) {
     const memoryContext = memories.length
       ? `\n\nMEMÓRIAS GUARDADAS (fornecidas explicitamente pelo utilizador via /remember -- não são factos verificados, são contexto de fundo; não as repitas literalmente a menos que seja relevante para a resposta):\n${memories.map((memory) => `- ${memory}`).join('\n')}`
       : '';
-    const system = (body.mode === 'code' ? codePrompt(body.userName || 'Utilizador') : standardPrompt(body.userName || 'Utilizador')) + webContext + fileToolNote + memoryContext;
-    // Mirrors streamGroq's own isImageAttachment: an image attachment forces
+    const system = (body.mode === 'code' ? codePrompt(body.userName || 'Utilizador', resolvedModel) : standardPrompt(body.userName || 'Utilizador', resolvedModel)) + webContext + fileToolNote + memoryContext;
+    // isImageAttachment also gates MCP discovery: an image attachment forces
     // the vision model, which drops every tool including MCP ones (see the
-    // toolsForModel guard there). Discovering tools that will just be thrown
-    // away costs up to MCP_TIMEOUT_MS of latency before the first byte, for
-    // nothing the model is ever offered.
-    const isImageAttachment = body.attachment && typeof body.attachment.text !== 'string';
+    // toolsForModel guard in streamGroq). Discovering tools that will just be
+    // thrown away costs up to MCP_TIMEOUT_MS of latency before the first byte,
+    // for nothing the model is ever offered.
     const mcpServers = !isImageAttachment && Array.isArray(body.mcpServers) ? body.mcpServers : [];
     const mcpTools = mcpServers.length ? await discoverMcpTools(mcpServers) : [];
     const mcpToolsByName = Object.fromEntries(mcpTools.map((tool) => [tool.name, tool]));
@@ -636,10 +697,15 @@ export default async function handler(req, res) {
     if (results.length) sendEvent(res, 'sources', results.map(({ title, url }) => ({ title, url })));
     await streamGroq({
       messages: body.messages, system, attachment: body.attachment, signal: controller.signal,
-      textModel: body.mode === 'code' ? CODE_FALLBACK_MODEL : TEXT_MODEL,
+      textModel,
       tools: [...TOOLS, ...mcpTools.map((tool) => tool.definition)],
       temperature: body.temperature ?? 0.7,
       mcpToolsByName,
+      // Fired by streamGroq itself once the request has cleared every check
+      // that could still reject it (see the onModel comment there) -- not
+      // sent up front here, which used to announce a real model over SSE for
+      // requests about to fail anyway (e.g. a PDF attachment in Standard mode).
+      onModel: (model) => sendEvent(res, 'model', { model }),
       onChunk: (text) => text && sendEvent(res, 'chunk', text),
       onFile: (filename, content) => sendEvent(res, 'file', { filename, content }),
     });
