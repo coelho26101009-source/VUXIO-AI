@@ -638,7 +638,7 @@ const pickTextModel = (body) => {
 };
 
 export default async function handler(req, res) {
-  // Art. 50(1)/(2) AI Act: machine-readable marking that replies are AI-generated.
+  // Art. 50(2) AI Act: machine-readable marking that replies are AI-generated.
   // Set once here, before any response path, so it covers every status code
   // this handler can return -- not just the SSE success path.
   res.setHeader('X-AI-Generated', 'true');
