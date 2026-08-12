@@ -7,9 +7,10 @@ interface InputBarProps {
   isLoading: boolean;
   isConnected: boolean;
   isCodeMode?: boolean;
+  isGuest?: boolean;
 }
 
-export const InputBar: React.FC<InputBarProps> = ({ onSend, isLoading, isConnected, isCodeMode = false }) => {
+export const InputBar: React.FC<InputBarProps> = ({ onSend, isLoading, isConnected, isCodeMode = false, isGuest = false }) => {
   const [text, setText] = useState('');
   const [attachment, setAttachment] = useState<Attachment | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -177,6 +178,14 @@ const CODE_EXTENSIONS = [...TEXT_EXTENSIONS].map(ext => `.${ext}`).join(',');
       {/* Art. 50(1) AI Act: visible disclosure that replies are AI-generated. */}
       <p className="text-center text-xs mt-1" style={{ color: 'rgba(255,255,255,0.18)' }}>
         As respostas do VUXIO são geradas por IA e podem conter erros.
+      </p>
+      {/* GDPR (Art. 13/14): where the conversation ends up. Signed-in and
+          guest behaviour genuinely differ here (useChat.ts skips the
+          Firestore write when there's no uid), so the text must too. */}
+      <p className="text-center text-xs mt-1" style={{ color: 'rgba(255,255,255,0.18)' }}>
+        {isGuest
+          ? 'Modo convidado: esta conversa não é guardada.'
+          : 'As tuas conversas ficam guardadas na tua conta Google.'}
       </p>
 
       <input

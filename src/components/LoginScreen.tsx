@@ -97,6 +97,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onGuest, isAu
         <p className="text-xs mt-6 text-center leading-relaxed" style={{ color: 'rgba(255,255,255,0.15)' }}>
           Sem conta, o histórico de conversas não é guardado.
         </p>
+        {/* GDPR (Art. 13): entering with Google saves the opposite -- every
+            conversation, tied to that account, indefinitely (see
+            PRIVACY.md). Kept next to the guest line above so both are read
+            together, not just the reassuring one. */}
+        <p className="text-xs mt-1 text-center leading-relaxed" style={{ color: 'rgba(255,255,255,0.15)' }}>
+          Ao entrar com o Google, as tuas conversas ficam guardadas na tua conta.
+        </p>
       </div>
     </div>
   );

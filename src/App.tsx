@@ -412,7 +412,7 @@ const App: React.FC = () => {
             </div>
           )}
         </main>
-        <div className="p-4 sm:p-6"><InputBar onSend={handleSend} isLoading={isLoading} isConnected={isConnected} isCodeMode={isCodeMode} /></div>
+        <div className="p-4 sm:p-6"><InputBar onSend={handleSend} isLoading={isLoading} isConnected={isConnected} isCodeMode={isCodeMode} isGuest={authMode === 'guest'} /></div>
       </div>
 
       {/* File preview panel + click-away backdrop */}
