@@ -174,6 +174,10 @@ const CODE_EXTENSIONS = [...TEXT_EXTENSIONS].map(ext => `.${ext}`).join(',');
       <p className="text-center text-xs mt-2.5" style={{ color: 'rgba(255,255,255,0.18)' }}>
         Enter para enviar · Shift+Enter para nova linha
       </p>
+      {/* Art. 50(1) AI Act: visible disclosure that replies are AI-generated. */}
+      <p className="text-center text-xs mt-1" style={{ color: 'rgba(255,255,255,0.18)' }}>
+        As respostas do VUXIO são geradas por IA e podem conter erros.
+      </p>
 
       <input
         ref={fileRef}
