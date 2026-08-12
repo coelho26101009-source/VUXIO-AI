@@ -329,7 +329,9 @@ const App: React.FC = () => {
                       <span className="text-[10px] text-white/20 mb-1">{log.timestamp}</span>
 
                       {/* Message bubble */}
-                      <div className={`px-4 py-3 text-sm rounded-2xl ${
+                      <div
+                        data-ai-generated={isVuxio ? 'true' : undefined}
+                        className={`px-4 py-3 text-sm rounded-2xl ${
                         log.source === 'USER'
                           ? isCodeMode
                             ? 'bg-green-600/15 border border-green-500/25 text-white font-mono'
