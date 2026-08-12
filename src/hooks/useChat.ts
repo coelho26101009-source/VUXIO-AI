@@ -135,9 +135,7 @@ export const useChat = (user: User | null, onReply: (text: string) => void, code
     if (chatIdRef.current === chatId) newChat();
   }, [newChat]);
 
-  const persist = useCallback(async (userMessage: LogMessage, reply: LogMessage, isCodeMode: boolean) => {
-    const uid = userRef.current?.uid;
-    if (!uid) return;
+  const persist = useCallback(async (uid: string, userMessage: LogMessage, reply: LogMessage, isCodeMode: boolean) => {
     let chatId = chatIdRef.current;
     if (!chatId) {
       const reference = await addDoc(chatsCol(uid), { title: userMessage.text.slice(0, 45) || 'Nova conversa', isCodeMode, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
@@ -178,6 +176,10 @@ export const useChat = (user: User | null, onReply: (text: string) => void, code
 
   const sendMessage = useCallback(async (text: string, attachment: Attachment | null, userName: string) => {
     if (isLoading) return;
+    // Captured now, not after the reply streams in: a guest who signs in
+    // mid-reply must not have this message saved when the UI told them,
+    // at the moment they sent it, that guest messages aren't kept.
+    const uid = userRef.current?.uid;
     const history = logsRef.current;
     const userMessage = makeMessage('USER', text || `📎 ${attachment?.file.name}`);
     const placeholder: LogMessage = { id: makeId(), source: 'VUXIO', text: '', timestamp: makeTimestamp() };
@@ -186,7 +188,7 @@ export const useChat = (user: User | null, onReply: (text: string) => void, code
     try {
       const response = await requestReply(history, userMessage, attachment, userName, placeholder.id);
       const reply = { ...placeholder, text: response.text, ...(response.sources ? { sources: response.sources } : {}), ...(response.file ? { file: response.file } : {}), ...(response.model ? { usedModel: response.model } : {}) };
-      await persist(userMessage, reply, codeModeRef.current);
+      if (uid) await persist(uid, userMessage, reply, codeModeRef.current);
       onReply(response.text);
     } catch (error) {
       setLogs(previous => previous.map(message => message.id === placeholder.id ? { ...message, source: 'ERROR', text: error instanceof Error ? error.message : 'Ocorreu um erro inesperado.' } : message));

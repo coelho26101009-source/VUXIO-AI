@@ -8,12 +8,15 @@ author of this file.
 
 ## What's collected
 
-Using VUXIO-AI requires signing in with Google (`src/hooks/useAuth.ts`,
-`signInWithPopup`/`signInWithRedirect`) — there's also a "Continuar sem
-conta" guest mode (`src/components/LoginScreen.tsx`), and for guests
-`useChat.ts`'s `persist()` returns early on a missing `uid`, so nothing is
-written to Firestore for that session. Signed-in usage does not have that
-guard, and writes to Cloud Firestore under `users/{uid}`:
+VUXIO-AI does not require signing in — there's a "Continuar sem conta" guest
+mode (`src/components/LoginScreen.tsx`). Google sign-in
+(`src/hooks/useAuth.ts`, `signInWithPopup`/`signInWithRedirect`) is
+available for anyone who wants their history saved. Guest sessions never
+reach Firestore: `useChat.ts`'s `sendMessage` captures the signed-in `uid`
+at the moment a message is sent (not after the reply streams back, which
+would let a guest who signs in mid-reply have that message saved despite
+what the UI told them), and skips the Firestore write entirely when there
+is none. Signed-in usage writes to Cloud Firestore under `users/{uid}`:
 
 - **Account fields** (`useChat.ts`'s `subscribeToChats`, `useSettings.ts`):
   `email`, `displayName`, `lastSeen`, app `settings`, saved `memories`, and
