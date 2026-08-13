@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import type { User } from 'firebase/auth';
 import { signInWithPopup, signInWithRedirect, signOut, onAuthStateChanged, getRedirectResult } from 'firebase/auth';
 import { auth, googleProvider } from '../firebase';
+import { t } from '../i18n';
 
 // 'loading'        — Firebase ainda a verificar
 // 'unauthenticated' — sem user, ainda não escolheu guest
@@ -10,11 +11,11 @@ import { auth, googleProvider } from '../firebase';
 export type AuthMode = 'loading' | 'unauthenticated' | 'guest' | 'user';
 
 const getAuthErrorMessage = (code?: string) => {
-  if (code === 'auth/unauthorized-domain') return 'Este domínio não está autorizado no Firebase. Adiciona-o em Authentication → Settings → Authorized domains.';
-  if (code === 'auth/operation-not-allowed') return 'O login com Google ainda não está ativo no Firebase. Ativa Google em Authentication → Sign-in method.';
-  if (code === 'auth/network-request-failed') return 'Falha de rede ao iniciar sessão. Verifica a internet e tenta novamente.';
-  if (code === 'auth/popup-closed-by-user') return 'O login foi cancelado.';
-  return 'Falha ao iniciar sessão com Google. Tenta novamente.';
+  if (code === 'auth/unauthorized-domain') return t('auth.unauthorizedDomain');
+  if (code === 'auth/operation-not-allowed') return t('auth.operationNotAllowed');
+  if (code === 'auth/network-request-failed') return t('auth.networkFailed');
+  if (code === 'auth/popup-closed-by-user') return t('auth.popupClosed');
+  return t('auth.genericFailure');
 };
 
 export const useAuth = () => {

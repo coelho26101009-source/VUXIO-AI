@@ -1,8 +1,12 @@
 import React, { useState } from 'react';
-import { Plus, MessageSquare, LogOut, LogIn, Mic, MicOff, Trash2 } from 'lucide-react';
+import {
+  Plus, MessageSquare, LogOut, LogIn, Mic, MicOff, Trash2,
+  PanelLeft, Search, Home, Code2, Folder,
+  ChevronDown,
+} from 'lucide-react';
 import type { User } from 'firebase/auth';
 import type { Chat } from '../types';
-import { VuxioAvatar } from './VuxioAvatar';
+import { t } from '../i18n';
 
 const ChatItem: React.FC<{
   chat: Chat;
@@ -22,48 +26,64 @@ const ChatItem: React.FC<{
     }
   };
 
-  const chatIsCode = chat.isCodeMode ?? false;
-  const activeColor = chatIsCode ? 'rgba(34,197,94,0.3)' : 'rgba(139,92,246,0.3)';
-  const activeBg    = chatIsCode
-    ? 'linear-gradient(135deg,rgba(34,197,94,0.15),rgba(22,163,74,0.1))'
-    : 'linear-gradient(135deg,rgba(124,58,237,0.2),rgba(99,102,241,0.15))';
-
   return (
     <div
-      className="group relative flex items-center gap-2 px-3 py-2.5 rounded-xl transition-all duration-150 cursor-pointer"
-      style={{
-        background: isActive ? activeBg : undefined,
-        border: isActive ? `1px solid ${activeColor}` : '1px solid transparent',
-      }}
+      className={`group flex items-center gap-2.5 px-2.5 py-[7px] rounded-lg cursor-pointer transition-colors ${
+        isActive ? 'bg-white/[0.07]' : 'hover:bg-white/[0.04]'
+      }`}
       onClick={onLoad}
     >
-      <MessageSquare size={12} className="shrink-0 opacity-30" />
-      <span
-        className="flex-1 text-sm truncate"
-        style={{ color: isActive ? (chatIsCode ? '#86efac' : '#c4b5fd') : 'rgba(255,255,255,0.45)' }}
-      >
+      <MessageSquare size={15} className="shrink-0 text-white/35" strokeWidth={1.75} />
+      <span className={`flex-1 text-[13.5px] truncate ${isActive ? 'text-white/90' : 'text-white/65'}`}>
         {chat.title}
       </span>
-      {chatIsCode && (
-        <span className="shrink-0 text-[8px] font-bold font-mono px-1.5 py-0.5 rounded"
-          style={{ background: 'rgba(34,197,94,0.15)', color: '#4ade80', border: '1px solid rgba(34,197,94,0.2)' }}>
-          CODE
-        </span>
-      )}
       <button
         onClick={handleDelete}
-        className={`shrink-0 p-1 rounded-lg transition-all opacity-0 group-hover:opacity-100 ${
-          confirmDelete
-            ? 'text-red-400 bg-red-500/15 opacity-100'
-            : 'text-white/20 hover:text-red-400 hover:bg-red-500/10'
+        className={`shrink-0 p-0.5 rounded transition-opacity opacity-0 group-hover:opacity-100 ${
+          confirmDelete ? 'text-red-400 opacity-100' : 'text-white/30 hover:text-red-400'
         }`}
-        title={confirmDelete ? 'Clica novamente para confirmar' : 'Apagar conversa'}
+        title={confirmDelete ? t('common.confirmDelete') : t('sidebar.deleteChat')}
       >
-        <Trash2 size={12} />
+        <Trash2 size={13} />
       </button>
     </div>
   );
 };
+
+/** Sidebar row shared by the nav list -- one shape for both wired and
+ *  not-yet-built destinations, so adding the real feature later is a
+ *  matter of swapping onClick, not restyling the row. */
+const NavRow: React.FC<{
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+}> = ({ icon, label, onClick }) => (
+  <button
+    onClick={onClick}
+    className="w-full flex items-center gap-2.5 px-2.5 py-[7px] rounded-lg text-white/65 hover:text-white hover:bg-white/[0.05] transition-colors"
+  >
+    <span className="shrink-0 text-white/45">{icon}</span>
+    <span className="text-[13.5px]">{label}</span>
+  </button>
+);
+
+/** One icon in the collapsed rail. Same role as NavRow, square footprint. */
+const RailButton: React.FC<{
+  icon: React.ReactNode;
+  title: string;
+  active?: boolean;
+  onClick: () => void;
+}> = ({ icon, title, active, onClick }) => (
+  <button
+    onClick={onClick}
+    title={title}
+    className={`w-9 h-9 flex items-center justify-center rounded-lg transition-colors shrink-0 ${
+      active ? 'text-white bg-white/[0.09]' : 'text-white/45 hover:text-white/85 hover:bg-white/[0.06]'
+    }`}
+  >
+    {icon}
+  </button>
+);
 
 interface SidebarProps {
   user: User | null;
@@ -74,175 +94,202 @@ interface SidebarProps {
   isSpeaking: boolean;
   isListening: boolean;
   isCodeMode?: boolean;
+  collapsed?: boolean;
   onNewChat: () => void;
   onLoadChat: (chat: Chat) => void;
   onDeleteChat: (id: string) => void;
   onLogout: () => void;
   onLogin: () => void;
   onToggleMic: () => void;
-  onClose?: () => void;
+  onOpenSettings: () => void;
+  onSetCodeMode: (on: boolean) => void;
+  onOpenConversas: () => void;
+  onOpenProjects: () => void;
+  onToggleCollapse?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
   user, isGuest, chatList, currentChatId,
-  isConnected, isSpeaking, isListening, isCodeMode = false,
+  isListening, isCodeMode = false, collapsed = false,
   onNewChat, onLoadChat, onDeleteChat, onLogout, onLogin, onToggleMic,
+  onOpenSettings, onSetCodeMode, onOpenConversas, onOpenProjects, onToggleCollapse,
 }) => {
-  const c = isCodeMode ? {
-    bg:         'linear-gradient(180deg, #0a1a0e 0%, #080f08 100%)',
-    border:     'rgba(34,197,94,0.12)',
-    divider:    'rgba(34,197,94,0.10)',
-    btnPrimary: 'linear-gradient(135deg, #16a34a, #15803d)',
-    btnShadow:  'rgba(34,197,94,0.3)',
-    btnShadowH: 'rgba(34,197,94,0.5)',
-    btnHoverBg: 'rgba(34,197,94,0.12)',
-    guestCard:  'rgba(34,197,94,0.07)',
-    guestBorder:'rgba(34,197,94,0.12)',
-    loginBg:    'rgba(34,197,94,0.15)',
-    loginBorder:'rgba(34,197,94,0.3)',
-    loginColor: '#86efac',
-    micActive:  '#16a34a',
-    micOff:     'text-green-400/60',
-    versionColor:'text-green-400/60',
-  } : {
-    bg:         'linear-gradient(180deg, #13132b 0%, #0e0e1e 100%)',
-    border:     'rgba(139,92,246,0.12)',
-    divider:    'rgba(139,92,246,0.08)',
-    btnPrimary: 'linear-gradient(135deg, #7c3aed, #6366f1)',
-    btnShadow:  'rgba(124,58,237,0.3)',
-    btnShadowH: 'rgba(124,58,237,0.5)',
-    btnHoverBg: 'rgba(124,58,237,0.12)',
-    guestCard:  'rgba(124,58,237,0.07)',
-    guestBorder:'rgba(139,92,246,0.12)',
-    loginBg:    'rgba(124,58,237,0.2)',
-    loginBorder:'rgba(139,92,246,0.3)',
-    loginColor: '#c4b5fd',
-    micActive:  '#7c3aed',
-    micOff:     'text-purple-400/60',
-    versionColor:'text-purple-400/60',
-  };
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+
+  // Code mode needs a project for its file context (see useProjects) -- a
+  // guest can't create one, so the toggle is disabled rather than hidden:
+  // hiding it would look like the feature doesn't exist, disabling it with
+  // a tooltip tells a guest exactly why and what unlocks it.
+  const codeModeLocked = isGuest;
+
+  if (collapsed) {
+    return (
+      <aside className="w-[64px] shrink-0 h-full flex flex-col items-center bg-[#211f1d] py-3.5 gap-1">
+        <RailButton icon={<PanelLeft size={17} strokeWidth={1.75} />} title={t('sidebar.expandPanel')} onClick={onToggleCollapse ?? (() => {})} />
+        <div className="h-2" />
+        <RailButton icon={<Plus size={18} strokeWidth={2} />} title={t('sidebar.new')} onClick={onNewChat} />
+        <RailButton icon={<MessageSquare size={16} strokeWidth={1.75} />} title={t('sidebar.nav.conversas')} onClick={onOpenConversas} />
+        <RailButton icon={<Folder size={16} strokeWidth={1.75} />} title={t('sidebar.nav.projetos')} onClick={onOpenProjects} />
+        <div className="h-2" />
+        <RailButton
+          icon={<Code2 size={16} strokeWidth={1.75} />}
+          title={codeModeLocked ? t('projects.needAccount') : t('sidebar.code')}
+          active={isCodeMode}
+          onClick={() => (codeModeLocked ? onOpenProjects() : onSetCodeMode(!isCodeMode))}
+        />
+
+        <div className="flex-1" />
+
+        <RailButton
+          icon={isListening ? <Mic size={16} className="text-red-400" /> : <MicOff size={16} strokeWidth={1.75} />}
+          title={isListening ? t('sidebar.micOn') : t('sidebar.micOff')}
+          onClick={onToggleMic}
+        />
+        <button
+          onClick={user ? onLogout : onLogin}
+          title={user?.displayName ?? t('sidebar.guest')}
+          className="w-9 h-9 rounded-full shrink-0 flex items-center justify-center text-[12px] font-semibold text-[#2a1a12] overflow-hidden mt-1"
+          style={{ background: '#d97757' }}
+        >
+          {user?.photoURL
+            ? <img src={user.photoURL} className="w-full h-full object-cover" alt="" />
+            : (user?.displayName?.charAt(0) ?? 'C')}
+        </button>
+      </aside>
+    );
+  }
 
   return (
-    <aside
-      className="w-[280px] shrink-0 h-full flex flex-col border-r"
-      style={{ background: c.bg, borderColor: c.border }}
-    >
-      {/* ── Avatar + nome ── */}
-      <div className="flex flex-col items-center gap-3 pt-8 pb-6 px-5">
-        <VuxioAvatar size={64} isConnected={isConnected} isSpeaking={isSpeaking} isCodeMode={isCodeMode} />
-        <div className="text-center">
-          <p className="text-white font-bold text-base tracking-wide">VUXIO</p>
-          <p className={`text-[11px] tracking-widest uppercase font-mono ${c.versionColor}`}>
-            {isCodeMode ? 'CODE MODE' : 'V1.0'}
-          </p>
+    <aside className="w-[288px] shrink-0 h-full flex flex-col bg-[#211f1d] relative">
+      {/* ── Wordmark ── */}
+      <div className="flex items-center justify-between px-4 pt-3.5 pb-3">
+        <span className="text-[21px] leading-none text-white/95" style={{ fontFamily: "'Fraunces', Georgia, serif" }}>
+          {t('sidebar.wordmark')}
+        </span>
+        <div className="flex items-center gap-0.5">
+          <button onClick={onToggleCollapse} title={t('sidebar.closePanel')} className="p-1.5 rounded-md text-white/40 hover:text-white/80 hover:bg-white/[0.06] transition-colors">
+            <PanelLeft size={17} strokeWidth={1.75} />
+          </button>
+          <button title={t('sidebar.search')} className="p-1.5 rounded-md text-white/40 hover:text-white/80 hover:bg-white/[0.06] transition-colors">
+            <Search size={17} strokeWidth={1.75} />
+          </button>
         </div>
       </div>
 
-      <div className="h-px mx-5" style={{ background: c.divider }} />
+      {/* ── Home / Código tabs ── */}
+      <div className="px-3 pb-2.5">
+        <div className="flex gap-1.5">
+          <button
+            onClick={() => onSetCodeMode(false)}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-[7px] rounded-lg text-[13.5px] transition-colors ${
+              !isCodeMode ? 'bg-white/[0.09] text-white' : 'text-white/50 hover:text-white/80 hover:bg-white/[0.04]'
+            }`}
+          >
+            <Home size={15} strokeWidth={1.75} />
+            {t('sidebar.home')}
+          </button>
+          <button
+            onClick={() => (codeModeLocked ? onOpenProjects() : onSetCodeMode(true))}
+            title={codeModeLocked ? t('projects.needAccount') : undefined}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-[7px] rounded-lg text-[13.5px] transition-colors ${
+              isCodeMode ? 'bg-white/[0.09] text-white' : codeModeLocked ? 'text-white/25 hover:text-white/40' : 'text-white/50 hover:text-white/80 hover:bg-white/[0.04]'
+            }`}
+          >
+            <Code2 size={15} strokeWidth={1.75} />
+            {t('sidebar.code')}
+          </button>
+        </div>
+      </div>
 
-      {/* ── Nova conversa ── */}
-      <div className="px-4 pt-5">
+      {/* ── New ── */}
+      <div className="px-3 pb-1">
         <button
           onClick={onNewChat}
-          className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-semibold text-sm text-white transition-all duration-200"
-          style={{ background: c.btnPrimary, boxShadow: `0 4px 20px ${c.btnShadow}` }}
-          onMouseEnter={e => (e.currentTarget.style.boxShadow = `0 6px 28px ${c.btnShadowH}`)}
-          onMouseLeave={e => (e.currentTarget.style.boxShadow = `0 4px 20px ${c.btnShadow}`)}
+          className="w-full flex items-center gap-2.5 px-2.5 py-[9px] rounded-lg bg-white/[0.07] hover:bg-white/[0.11] text-white text-[13.5px] transition-[background-color,transform] hover:-translate-y-px active:translate-y-0"
+          style={{ transitionDuration: 'var(--dur-micro)', transitionTimingFunction: 'var(--ease-out)' }}
         >
-          <Plus size={16} />
-          Nova conversa
+          <Plus size={16} strokeWidth={2} />
+          {t('sidebar.new')}
         </button>
       </div>
 
-      <div className="h-px mx-5 mt-4" style={{ background: c.divider }} />
-
-      {/* ── Histórico ── */}
-      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1 VUXIO-scroll">
-        {user && chatList.length > 0 && (
-          <>
-            <div className="flex items-center justify-between px-1 mb-2">
-              <span className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: 'rgba(255,255,255,0.2)' }}>
-                Histórico
-              </span>
-              <span className="text-[10px]" style={{ color: 'rgba(255,255,255,0.15)' }}>
-                {chatList.length} conversa{chatList.length !== 1 ? 's' : ''}
-              </span>
-            </div>
-            {chatList.map(chat => (
-              <ChatItem
-                key={chat.id}
-                chat={chat}
-                isActive={currentChatId === chat.id}
-                onLoad={() => onLoadChat(chat)}
-                onDelete={() => onDeleteChat(chat.id)}
-              />
-            ))}
-          </>
-        )}
-
-        {isGuest && (
-          <div className="mt-2 p-4 rounded-2xl text-center"
-            style={{ background: c.guestCard, border: `1px solid ${c.guestBorder}` }}>
-            <p className="text-xs text-white/30 mb-3 leading-relaxed">
-              Entra com a tua conta para guardar o histórico de conversas.
-            </p>
-            <button
-              onClick={onLogin}
-              className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-semibold transition-all"
-              style={{ background: c.loginBg, border: `1px solid ${c.loginBorder}`, color: c.loginColor }}
-            >
-              <LogIn size={13} />
-              Entrar com Google
-            </button>
-          </div>
-        )}
-
-        {user && chatList.length === 0 && (
-          <p className="text-xs text-white/20 text-center py-6">Sem histórico ainda.</p>
-        )}
+      {/* ── Nav ── */}
+      <div className="px-3 pt-1">
+        <NavRow icon={<MessageSquare size={15} strokeWidth={1.75} />} label={t('sidebar.nav.conversas')} onClick={onOpenConversas} />
+        <NavRow icon={<Folder size={15} strokeWidth={1.75} />} label={t('sidebar.nav.projetos')} onClick={onOpenProjects} />
       </div>
 
-      <div className="h-px mx-5" style={{ background: c.divider }} />
+      {/* ── Recentes ── */}
+      <div className="px-3 pt-5 flex-1 min-h-0 flex flex-col">
+        <div className="flex items-center justify-between px-2.5 mb-1">
+          <span className="text-[12.5px] text-white/40">{t('sidebar.recent')}</span>
+        </div>
 
-      {/* ── Microfone + logout ── */}
-      <div className="p-4 space-y-2">
-        <div className="flex items-center justify-between px-4 py-3 rounded-2xl"
-          style={{ background: 'rgba(255,255,255,0.03)', border: `1px solid ${c.border}` }}>
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full flex items-center justify-center"
-              style={{ background: isListening ? 'rgba(239,68,68,0.15)' : (isCodeMode ? 'rgba(34,197,94,0.12)' : 'rgba(124,58,237,0.12)') }}>
-              {isListening
-                ? <Mic size={14} className="text-red-400" />
-                : <MicOff size={14} className={c.micOff} />}
-            </div>
-            <div>
-              <p className="text-xs font-semibold text-white/70">Microfone</p>
-              <p className="text-[10px] text-white/30">{isListening ? 'Ativo' : 'Desligado'}</p>
-            </div>
-          </div>
+        <div className="flex-1 overflow-y-auto VUXIO-scroll -mx-0.5 px-0.5">
+          {user && chatList.map(chat => (
+            <ChatItem
+              key={chat.id}
+              chat={chat}
+              isActive={currentChatId === chat.id}
+              onLoad={() => onLoadChat(chat)}
+              onDelete={() => onDeleteChat(chat.id)}
+            />
+          ))}
+
+          {isGuest && (
+            <button
+              onClick={onLogin}
+              className="w-full flex items-center gap-2.5 px-2.5 py-[7px] rounded-lg text-white/40 hover:text-white/70 hover:bg-white/[0.04] transition-colors"
+            >
+              <LogIn size={15} strokeWidth={1.75} className="shrink-0" />
+              <span className="text-[13.5px] text-left">{t('sidebar.signInForHistory')}</span>
+            </button>
+          )}
+
+          {user && chatList.length === 0 && (
+            <p className="px-2.5 py-[7px] text-[13.5px] text-white/30">{t('sidebar.noChatsYet')}</p>
+          )}
+        </div>
+      </div>
+
+      <div className="px-3 pb-3 pt-2 border-t border-white/[0.07] relative">
+        <div className="flex items-center gap-2 px-1.5 py-1.5 rounded-lg hover:bg-white/[0.05] transition-colors">
+          <button onClick={() => setUserMenuOpen(o => !o)} className="flex items-center gap-2 flex-1 min-w-0">
+            <span className="w-6 h-6 rounded-full shrink-0 flex items-center justify-center text-[11px] font-semibold text-[#2a1a12] overflow-hidden" style={{ background: '#d97757' }}>
+              {user?.photoURL
+                ? <img src={user.photoURL} className="w-full h-full object-cover" alt="" />
+                : (user?.displayName?.charAt(0) ?? 'C')}
+            </span>
+            <span className="text-[13px] text-white/75 truncate">
+              {user?.displayName?.split(' ')[0] ?? t('sidebar.guest')}
+              <span className="text-white/35"> · {user ? t('sidebar.account') : t('sidebar.noAccount')}</span>
+            </span>
+            <ChevronDown size={14} className="text-white/35 shrink-0" />
+          </button>
           <button
             onClick={onToggleMic}
-            className="relative w-10 h-5 rounded-full transition-all duration-300 shrink-0"
-            style={{ background: isListening ? c.micActive : 'rgba(255,255,255,0.1)' }}
+            title={isListening ? t('sidebar.micOn') : t('sidebar.micOff')}
+            className="p-1 rounded-md text-white/35 hover:text-white/75 transition-colors shrink-0"
           >
-            <span
-              className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all duration-300"
-              style={{ left: isListening ? '20px' : '2px' }}
-            />
+            {isListening ? <Mic size={15} className="text-red-400" /> : <MicOff size={15} />}
           </button>
         </div>
 
-        {user && (
-          <button
-            onClick={onLogout}
-            className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-sm font-medium transition-all"
-            style={{ color: 'rgba(239,68,68,0.5)', border: '1px solid transparent' }}
-            onMouseEnter={e => { e.currentTarget.style.color = '#f87171'; e.currentTarget.style.background = 'rgba(239,68,68,0.06)'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.15)'; }}
-            onMouseLeave={e => { e.currentTarget.style.color = 'rgba(239,68,68,0.5)'; e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'transparent'; }}
-          >
-            <LogOut size={14} />
-            Terminar sessão
-          </button>
+        {userMenuOpen && (
+          <div className="absolute bottom-full left-3 right-3 mb-1 rounded-lg border border-white/10 bg-[#2b2926] py-1 shadow-xl animate-menu-pop-up">
+            <button onClick={() => { onOpenSettings(); setUserMenuOpen(false); }} className="w-full text-left px-3 py-2 text-[13px] text-white/75 hover:bg-white/[0.06] transition-colors">
+              {t('sidebar.settings')}
+            </button>
+            {user ? (
+              <button onClick={() => { onLogout(); setUserMenuOpen(false); }} className="w-full flex items-center gap-2 px-3 py-2 text-[13px] text-white/75 hover:bg-white/[0.06] transition-colors">
+                <LogOut size={14} /> {t('sidebar.logout')}
+              </button>
+            ) : (
+              <button onClick={() => { onLogin(); setUserMenuOpen(false); }} className="w-full flex items-center gap-2 px-3 py-2 text-[13px] text-white/75 hover:bg-white/[0.06] transition-colors">
+                <LogIn size={14} /> {t('sidebar.login')}
+              </button>
+            )}
+          </div>
         )}
       </div>
     </aside>

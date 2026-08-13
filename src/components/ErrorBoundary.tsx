@@ -18,13 +18,13 @@ export class ErrorBoundary extends Component<Props, State> {
     if (this.state.hasError) {
       return (
         <div className="min-h-screen flex flex-col items-center justify-center bg-[#0e0e18] text-white gap-4 p-8">
-          <p className="text-2xl font-bold text-purple-400">Algo correu mal</p>
+          <p className="text-2xl font-bold text-amber-400">Algo correu mal</p>
           <p className="text-sm text-white/50 max-w-md text-center">
             {this.state.error?.message ?? 'Erro desconhecido'}
           </p>
           <button
             onClick={() => window.location.reload()}
-            className="mt-2 px-6 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 transition-colors text-sm font-semibold"
+            className="mt-2 px-6 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 transition-colors text-sm font-semibold"
           >
             Recarregar
           </button>

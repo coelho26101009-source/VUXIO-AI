@@ -14,12 +14,12 @@ export const FileAttachment: React.FC<{ file: GeneratedFile; isCodeMode?: boolea
     onClick={onOpen}
     className={`mt-3 flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-colors ${
       isCodeMode
-        ? 'bg-green-950/20 border-green-500/15 hover:bg-green-950/30'
+        ? 'bg-teal-950/20 border-teal-500/15 hover:bg-teal-950/30'
         : 'bg-black/20 border-white/10 hover:bg-black/30'
     }`}
   >
     <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
-      isCodeMode ? 'bg-green-500/10 text-green-400' : 'bg-purple-500/10 text-purple-300'
+      isCodeMode ? 'bg-teal-500/10 text-teal-400' : 'bg-amber-500/10 text-amber-300'
     }`}>
       <FileCode2 size={18} />
     </div>
@@ -35,7 +35,7 @@ export const FileAttachment: React.FC<{ file: GeneratedFile; isCodeMode?: boolea
       title="Descarregar ficheiro"
       className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
         isCodeMode
-          ? 'border-green-500/25 text-green-400 hover:bg-green-500/10'
+          ? 'border-teal-500/25 text-teal-400 hover:bg-teal-500/10'
           : 'border-white/15 text-white/70 hover:bg-white/10'
       }`}
     >

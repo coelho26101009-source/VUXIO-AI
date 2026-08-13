@@ -25,10 +25,10 @@ const CopyButton: React.FC<{ text: string }> = ({ text }) => {
   return (
     <button
       onClick={handleCopy}
-      className="flex items-center gap-1.5 text-xs px-2 py-1 rounded-md bg-white/10 hover:bg-white/20 text-white/70 hover:text-white transition-all"
+      className="flex items-center gap-1.5 text-xs px-2 py-1 rounded-md bg-white/10 hover:bg-white/20 text-white/70 hover:text-white transition-colors duration-150"
     >
       {copied
-        ? <><Check size={12} className="text-green-400" /><span className="text-green-400">Copiado</span></>
+        ? <><Check size={12} className="text-teal-400" /><span className="text-teal-400">Copiado</span></>
         : <><Copy size={12} /><span>Copiar</span></>}
     </button>
   );
@@ -50,7 +50,7 @@ const DownloadButton: React.FC<{ text: string; language: string }> = ({ text, la
   return (
     <button
       onClick={handleDownload}
-      className="flex items-center gap-1.5 text-xs px-2 py-1 rounded-md bg-green-500/10 hover:bg-green-500/20 text-green-400 hover:text-green-300 transition-all"
+      className="flex items-center gap-1.5 text-xs px-2 py-1 rounded-md bg-teal-500/10 hover:bg-teal-500/20 text-teal-400 hover:text-teal-300 transition-colors duration-150"
       title={`Descarregar como .${ext}`}
     >
       <Download size={12} />
@@ -67,9 +67,9 @@ export const MarkdownMessage: React.FC<{ text: string; isCodeMode?: boolean }> =
         const match = /language-(\w+)/.exec(className || '');
         const content = String(children).replace(/\n$/, '');
         return !inline && match ? (
-          <div className={`relative my-3 rounded-lg overflow-hidden border bg-[#0d0d0d] ${isCodeMode ? 'border-green-500/20' : 'border-white/10'}`}>
-            <div className={`flex items-center justify-between px-4 py-2 border-b ${isCodeMode ? 'bg-[#0a130b] border-green-500/10' : 'bg-[#1a1a1a] border-white/5'}`}>
-              <span className={`text-xs font-bold uppercase tracking-wider font-mono ${isCodeMode ? 'text-green-400' : 'text-purple-300'}`}>
+          <div className={`relative my-3 rounded-lg overflow-hidden border bg-[#0d0d0d] ${isCodeMode ? 'border-teal-500/20' : 'border-white/10'}`}>
+            <div className={`flex items-center justify-between px-4 py-2 border-b ${isCodeMode ? 'bg-[#071a19] border-teal-500/10' : 'bg-[#1a1a1a] border-white/5'}`}>
+              <span className={`text-xs font-bold uppercase tracking-wider font-mono ${isCodeMode ? 'text-teal-400' : 'text-amber-300'}`}>
                 {isCodeMode ? `> ${match[1]}` : match[1]}
               </span>
               <div className="flex items-center gap-2">
@@ -91,8 +91,8 @@ export const MarkdownMessage: React.FC<{ text: string; isCodeMode?: boolean }> =
           <code
             className={`px-1.5 py-0.5 rounded text-xs border font-mono ${
               isCodeMode
-                ? 'bg-green-900/20 text-green-400 border-green-500/20'
-                : 'bg-black/30 text-purple-300 border-purple-500/10'
+                ? 'bg-teal-900/20 text-teal-400 border-teal-500/20'
+                : 'bg-black/30 text-amber-300 border-amber-500/10'
             }`}
             {...props}
           >
@@ -104,12 +104,12 @@ export const MarkdownMessage: React.FC<{ text: string; isCodeMode?: boolean }> =
       ul: ({ children }) => <ul className="list-disc pl-4 mb-2 space-y-1">{children}</ul>,
       ol: ({ children }) => <ol className="list-decimal pl-4 mb-2 space-y-1">{children}</ol>,
       li: ({ children }) => <li className="leading-relaxed">{children}</li>,
-      h1: ({ children }) => <h1 className={`text-lg font-bold mb-2 ${isCodeMode ? 'text-green-400 font-mono' : 'text-purple-300'}`}>{children}</h1>,
-      h2: ({ children }) => <h2 className={`text-base font-bold mb-2 ${isCodeMode ? 'text-green-400 font-mono' : 'text-purple-300'}`}>{children}</h2>,
-      h3: ({ children }) => <h3 className={`text-sm font-bold mb-1 ${isCodeMode ? 'text-green-300 font-mono' : 'text-purple-200'}`}>{children}</h3>,
+      h1: ({ children }) => <h1 className={`text-lg font-bold mb-2 ${isCodeMode ? 'text-teal-400 font-mono' : 'text-amber-300'}`}>{children}</h1>,
+      h2: ({ children }) => <h2 className={`text-base font-bold mb-2 ${isCodeMode ? 'text-teal-400 font-mono' : 'text-amber-300'}`}>{children}</h2>,
+      h3: ({ children }) => <h3 className={`text-sm font-bold mb-1 ${isCodeMode ? 'text-teal-300 font-mono' : 'text-amber-200'}`}>{children}</h3>,
       strong: ({ children }) => <strong className="font-bold text-white">{children}</strong>,
       a: ({ href, children }) => (
-        <a href={href} target="_blank" rel="noopener noreferrer" className="text-purple-400 underline hover:text-purple-300 transition-colors">
+        <a href={href} target="_blank" rel="noopener noreferrer" className="text-amber-400 underline hover:text-amber-300 transition-colors">
           {children}
         </a>
       ),

@@ -26,20 +26,21 @@ export const FilePreviewPanel: React.FC<{ file: GeneratedFile | null; isCodeMode
   file, isCodeMode = false, onClose,
 }) => (
   <div
-    className={`fixed inset-y-0 right-0 z-50 flex w-full max-w-2xl transform flex-col border-l backdrop-blur-xl transition-transform duration-300 ${
+    className={`fixed inset-y-0 right-0 z-50 flex w-full max-w-2xl transform flex-col border-l backdrop-blur-xl transition-transform ${
       file ? 'translate-x-0' : 'translate-x-full'
-    } ${isCodeMode ? 'bg-[#080f0b]/95 border-green-500/10' : 'bg-[#0b0b1a]/95 border-white/10'}`}
+    } bg-[#211f1d]/95 border-white/10`}
+    style={{ transitionDuration: 'var(--dur-long)', transitionTimingFunction: 'var(--ease-in-out)' }}
   >
     {file && (
       <>
-        <div className={`flex h-[60px] shrink-0 items-center justify-between px-4 border-b ${isCodeMode ? 'border-green-500/10' : 'border-white/10'}`}>
+        <div className={`flex h-[60px] shrink-0 items-center justify-between px-4 border-b ${isCodeMode ? 'border-teal-500/10' : 'border-white/10'}`}>
           <p className="truncate text-sm font-medium text-white">{file.filename}</p>
           <div className="flex items-center gap-2">
             <button
               onClick={() => downloadFile(file.filename, file.content)}
               title="Descarregar ficheiro"
               className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
-                isCodeMode ? 'border-green-500/25 text-green-400 hover:bg-green-500/10' : 'border-white/15 text-white/70 hover:bg-white/10'
+                isCodeMode ? 'border-teal-500/25 text-teal-400 hover:bg-teal-500/10' : 'border-white/15 text-white/70 hover:bg-white/10'
               }`}
             >
               <Download size={12} />
