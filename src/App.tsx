@@ -68,10 +68,9 @@ const starters = () => [
 
 const App: React.FC = () => {
   const { user, authMode, isAuthBusy, authError, login, logout, continueAsGuest } = useAuth();
-  const { isSpeaking, isListening, speak, toggleMic } = useSpeech();
+  const { isListening, toggleMic } = useSpeech();
   const [isConnected, setIsConnected] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const [isMuted] = useState(false);
   const [isCodeMode, setIsCodeMode] = useState(false);
   const [isWebMode,  setIsWebMode]  = useState(false);
   const [isResearchMode, setIsResearchMode] = useState(false);
@@ -89,7 +88,7 @@ const App: React.FC = () => {
   const { projectList, subscribeToProjects, createProject, deleteProject } = useProjects(user);
 
   const { logs, chatList, currentChatId, isLoading, isStreaming, isSearching, researchStep, groqLimits, sendMessage, regenerate, newChat, loadChat, deleteChat, subscribeToChats, addLocalMessage } =
-    useChat(user, isMuted ? () => {} : speak, isCodeMode, isWebMode, isResearchMode, {
+    useChat(user, isCodeMode, isWebMode, isResearchMode, {
       temperature: settings.temperature,
       memories: settings.memoryEnabled ? memories.map(memory => memory.text) : [],
       mcpServers: mcpServers.map(({ name, url }) => ({ name, url })),
@@ -218,7 +217,6 @@ const App: React.FC = () => {
           chatList={chatList}
           currentChatId={currentChatId}
           isConnected={isConnected}
-          isSpeaking={isSpeaking}
           isListening={isListening}
           isCodeMode={isCodeMode}
           collapsed={!isSidebarOpen}

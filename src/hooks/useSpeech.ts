@@ -29,10 +29,7 @@ type SpeechRecognitionConstructor = new () => BrowserSpeechRecognition;
 const RECOVERABLE_ERRORS = new Set(['no-speech', 'aborted']);
 
 export const useSpeech = () => {
-  const [isSpeaking, setIsSpeaking] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
-  const isMutedRef = useRef(isMuted);
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
   // Separate from isListening on purpose: isListening reflects whether the
   // engine is actually running right now, which continuous mode still flips
@@ -40,10 +37,6 @@ export const useSpeech = () => {
   // and it is what onend below checks to decide whether to restart.
   const wantsListeningRef = useRef(false);
   const lastErrorRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    isMutedRef.current = isMuted;
-  }, [isMuted]);
 
   useEffect(() => {
     const browserWindow = window as Window & {
@@ -94,29 +87,6 @@ export const useSpeech = () => {
     };
   }, []);
 
-  const speak = useCallback((text: string) => {
-    if (isMutedRef.current) return;
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text.replace(/[*#_`]/g, ''));
-    utterance.lang = 'pt-PT';
-    utterance.pitch = 1.0;
-    utterance.rate = 1.05;
-    const voices = window.speechSynthesis.getVoices();
-    const ptVoice =
-      voices.find(v => v.lang.includes('pt-PT') && v.name.includes('Google')) ||
-      voices.find(v => v.lang.includes('pt'));
-    if (ptVoice) utterance.voice = ptVoice;
-    utterance.onstart = () => setIsSpeaking(true);
-    utterance.onend = () => setIsSpeaking(false);
-    utterance.onerror = () => setIsSpeaking(false);
-    window.speechSynthesis.speak(utterance);
-  }, []);
-
-  const stopSpeaking = useCallback(() => {
-    window.speechSynthesis.cancel();
-    setIsSpeaking(false);
-  }, []);
-
   const toggleMic = useCallback((onResult: (text: string) => void) => {
     if (!recognitionRef.current) return;
     if (wantsListeningRef.current) {
@@ -138,12 +108,5 @@ export const useSpeech = () => {
     }
   }, []);
 
-  const toggleMute = useCallback(() => {
-    setIsMuted(prev => {
-      if (!prev) window.speechSynthesis.cancel();
-      return !prev;
-    });
-  }, []);
-
-  return { isSpeaking, isListening, isMuted, speak, stopSpeaking, toggleMic, toggleMute };
+  return { isListening, toggleMic };
 };

@@ -108,7 +108,7 @@ interface ChatOptions {
   groqApiKey?: string;
 }
 
-export const useChat = (user: User | null, onReply: (text: string) => void, codeMode = false, webMode = false, researchMode = false, options?: ChatOptions) => {
+export const useChat = (user: User | null, codeMode = false, webMode = false, researchMode = false, options?: ChatOptions) => {
   const [logs, setLogs] = useState<LogMessage[]>([]);
   const [chatList, setChatList] = useState<Chat[]>([]);
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);
@@ -230,14 +230,13 @@ export const useChat = (user: User | null, onReply: (text: string) => void, code
       const response = await requestReply(history, userMessage, attachment, userName, placeholder.id);
       const reply = { ...placeholder, text: response.text, ...(response.sources ? { sources: response.sources } : {}), ...(response.file ? { file: response.file } : {}), ...(response.model ? { usedModel: response.model } : {}), ...(researchModeRef.current ? { isReport: true } : {}) };
       if (uid) await persist(uid, userMessage, reply, codeModeRef.current);
-      onReply(response.text);
     } catch (error) {
       setLogs(previous => previous.map(message => message.id === placeholder.id ? { ...message, source: 'ERROR', text: error instanceof Error ? error.message : 'Ocorreu um erro inesperado.' } : message));
     } finally {
       setIsLoading(false);
       setIsStreaming(false);
     }
-  }, [isLoading, onReply, persist, requestReply]);
+  }, [isLoading, persist, requestReply]);
 
   const regenerate = useCallback(async (userName: string) => {
     if (isLoading) return;
@@ -266,7 +265,6 @@ export const useChat = (user: User | null, onReply: (text: string) => void, code
           updateDoc(chatDoc(uid, chatId), { updatedAt: serverTimestamp() }),
         ]);
       }
-      onReply(response.text);
     } catch (error) {
       setLogs(current);
       console.error('[VUXIO regenerate]', error);
@@ -274,7 +272,7 @@ export const useChat = (user: User | null, onReply: (text: string) => void, code
       setIsLoading(false);
       setIsStreaming(false);
     }
-  }, [isLoading, onReply, requestReply]);
+  }, [isLoading, requestReply]);
 
   // For local-only entries (e.g. the /remember confirmation) that never touch
   // Firestore -- persisting them would mean inventing a chat document for a

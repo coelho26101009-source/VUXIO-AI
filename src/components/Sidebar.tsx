@@ -91,7 +91,6 @@ interface SidebarProps {
   chatList: Chat[];
   currentChatId: string | null;
   isConnected: boolean;
-  isSpeaking: boolean;
   isListening: boolean;
   isCodeMode?: boolean;
   collapsed?: boolean;
