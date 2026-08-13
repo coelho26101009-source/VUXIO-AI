@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import type { User } from 'firebase/auth';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
-import type { Settings, Memory, McpServer } from '../types';
+import type { Settings, Memory, McpServer, SelectableModel } from '../types';
 
 const MAX_MEMORIES = 20;
 const MAX_MEMORY_LENGTH = 500;
@@ -15,6 +15,26 @@ const userDoc = (uid: string) => doc(db, 'users', uid);
 const makeId = () => crypto.randomUUID();
 
 const DEFAULT_SETTINGS: Settings = { defaultMode: 'standard', temperature: 0.7, memoryEnabled: true, selectedModel: 'auto' };
+
+const VALID_MODELS: SelectableModel[] = [
+  'auto', 'openai/gpt-oss-120b', 'openai/gpt-oss-20b',
+  'gemini-2.5-pro', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite',
+  'nvidia/nemotron-3-ultra-550b-a55b:free', 'nvidia/nemotron-3-super-120b-a12b:free',
+  'poolside/laguna-s-2.1:free', 'google/gemma-4-31b-it:free', 'google/gemma-4-26b-a4b-it:free',
+  'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free', 'poolside/laguna-xs-2.1:free',
+  'cohere/north-mini-code:free', 'nvidia/nemotron-3-nano-30b-a3b:free',
+  'nvidia/nemotron-3.5-lightning:free', 'nvidia/nemotron-nano-12b-v2-vl:free',
+  'nvidia/nemotron-nano-9b-v2:free', 'liquid/lfm-2.5-2.6b:free', 'openai/gpt-oss-20b:free',
+];
+
+/**
+ * Settings stored before a model was retired still name it. The backend
+ * rejects an unknown model id outright, so without this a user who once
+ * picked Llama 3.3 would get "Modelo inválido." on every message until they
+ * happened to open Settings. Falls back to Auto instead.
+ */
+const withSupportedModel = (settings: Settings): Settings =>
+  VALID_MODELS.includes(settings.selectedModel) ? settings : { ...settings, selectedModel: 'auto' };
 
 // Firestore arrays are always overwritten wholesale, never merged element by
 // element (true for both setDoc-merge and updateDoc) -- every mutation here
@@ -50,7 +70,7 @@ export const useSettings = (user: User | null) => {
     if (!user) return;
     return onSnapshot(userDoc(user.uid), snapshot => {
       const data = snapshot.data();
-      setSettings({ ...DEFAULT_SETTINGS, ...(data?.settings as Partial<Settings> | undefined) });
+      setSettings(withSupportedModel({ ...DEFAULT_SETTINGS, ...(data?.settings as Partial<Settings> | undefined) }));
       setMemories((data?.memories as Memory[] | undefined) ?? []);
       setMcpServers((data?.mcpServers as McpServer[] | undefined) ?? []);
     });

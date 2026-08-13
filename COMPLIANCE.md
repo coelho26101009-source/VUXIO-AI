@@ -33,23 +33,40 @@ third-party models over an API. The operator of this deployment is:
 ## Models and services actually present in `api/chat.js`
 
 Read directly from `api/chat.js` — nothing here is inferred from the
-README or from history in code comments (e.g. the file's own comments
-note Code Mode used to call Gemini and no longer does; Gemini is not
-called anywhere in the current code and is not listed below):
+README or from history in code comments. Updated 2026-08-13: this section
+previously said "Gemini is not called anywhere in the current code" — that
+was true as of the previous check and is no longer true; Gemini and
+OpenRouter were both wired in since, and are listed below.
 
 | Constant | Value | Notes |
 |---|---|---|
 | `TEXT_MODEL` | `openai/gpt-oss-120b` | Standard mode default; served via Groq |
-| `VISION_MODEL` | `qwen/qwen3.6-27b` | Used for image attachments |
+| `VISION_MODEL` | `qwen/qwen3.6-27b` | Used for image attachments; always Groq, regardless of the selected text model |
 | `CODE_FALLBACK_MODEL` | `openai/gpt-oss-120b` (= `TEXT_MODEL`) | Code mode default |
-| `LARGE_MODEL` | `llama-3.3-70b-versatile` | Selectable / Auto-routed |
 | `LIGHT_MODEL` | `openai/gpt-oss-20b` | Selectable / Auto-routed |
-| `FAST_MODEL` | `llama-3.1-8b-instant` | Selectable / Auto-routed |
 | `COMPOUND_MODEL` | `groq/compound` | Referenced only by a guard that keeps it out of `SELECTABLE_MODELS` and strips `tools` if it's ever used — not reachable through any current routing path (`pickTextModel`/`autoStandardModel`) |
+| `GEMINI_MODELS` | `gemini-2.5-pro`, `gemini-3.7-flash`, `gemini-3.6-flash`, `gemini-3.5-flash-lite` | Manual pick only, not Auto-routed; requested from Google's Gemini API |
+| `OPENROUTER_MODELS` | 14 ids, each ending `:free` (e.g. `nvidia/nemotron-3-ultra-550b-a55b:free`) | Manual pick only; requested from OpenRouter, which itself proxies to the underlying model's own infrastructure (NVIDIA, Poolside, Cohere, Liquid AI, Google, depending on which of the 14 is selected) |
 
-All of the above are requested from `https://api.groq.com/openai/v1/chat/completions`
-(`runCompletion`) — Groq is the API VUXIO-AI's backend actually calls;
-`openai/gpt-oss-*` and `llama-*`/`qwen*` are the underlying model families
+The four Groq constants above are requested from
+`https://api.groq.com/openai/v1/chat/completions` (`runCompletion`) — Groq
+is one of three APIs VUXIO-AI's backend now calls for chat completions,
+selected per-request by `providerForModel()` based on which model the user
+picked (Settings > model picker); the other two are Google's Gemini API
+(`https://generativelanguage.googleapis.com/...`) and OpenRouter
+(`https://openrouter.ai/api/v1/chat/completions`). Whichever is selected
+receives the full conversation the user sent to that turn — same as Groq
+already did before this update; the message content itself is data these
+providers now also receive, not just VUXIO-AI's own Firestore.
+
+Bring-your-own-key (`Settings > Advanced`, `body.groqApiKey`): a user-supplied
+Groq key is used for that request only and is never written to any
+datastore server-side (`api/chat.js`'s handler reads it from the request
+body, never logs it, never persists it) — session-only on the client too
+(`App.tsx`'s `groqApiKey` state, plain `useState`, not `localStorage` or
+Firestore). Gemini and OpenRouter do not have a BYOK path yet; both always
+use the deployment's own shared key.
+`openai/gpt-oss-*` and `qwen*` are the underlying model families
 Groq serves them from.
 
 `getWebContext()` also calls `https://api.tavily.com/search` (Tavily) when
@@ -101,11 +118,12 @@ instrument.
 ## Why not GPAI (Art. 51-56)
 
 VUXIO-AI does not train or place any model on the market — it is a
-deployer of the third-party models listed above, called over Groq's API.
-Art. 53's training-data-summary (Art. 53(1)(d)) and other GPAI obligations
-sit with those models' own providers (the entities that trained
-`openai/gpt-oss-120b`, the `llama-3.x` models, and `qwen3.6-27b`, and that
-operate the Groq inference service), not with VUXIO-AI.
+deployer of the third-party models listed above, called over Groq's,
+Google's, and OpenRouter's APIs. Art. 53's training-data-summary (Art.
+53(1)(d)) and other GPAI obligations sit with those models' own providers
+(the entities that trained each model, and that operate the inference
+service — Groq, Google, or whichever backend OpenRouter routes a given
+`:free` model to), not with VUXIO-AI.
 
 ## Art. 50(1) — visible disclosure to natural persons
 
@@ -129,6 +147,34 @@ Implemented:
 
 ## Requires human/legal review
 
+- **Provider terms of service, not just the AI Act — added 2026-08-13,
+  unresolved.** Checked OpenRouter's and Google's Gemini API terms directly
+  (not from memory) before adding those two providers. Both raised a real
+  question this document cannot resolve on its own:
+  - OpenRouter's terms prohibit using the Service "for purposes of
+    reselling API access to Models" — a multi-user app proxying many
+    end users' requests through one shared OpenRouter key is at least
+    arguably that, even though no money changes hands and the models used
+    are the `:free` tier.
+  - Google's Gemini API terms describe AI Studio / the unpaid Gemini API
+    quota as being "for developers building with Google AI models for
+    professional or business purposes, not for consumer use," and state
+    that on unpaid usage "Google uses the content you submit... to
+    provide, improve, and develop Google products" — i.e. guest and
+    signed-in users' message content sent to Gemini's free tier may be
+    used by Google for that purpose, which is a fact PRIVACY.md did not
+    previously disclose for any provider.
+  - This is not a new problem specific to Gemini/OpenRouter -- the same
+    "one backend key serving many end users" architecture applied to Groq
+    before this update too, and is common across AI-wrapper apps generally
+    -- but it had not been checked against any provider's actual terms
+    before now, for any provider, including Groq's. Read via automated
+    page summarization (WebFetch), not a full manual read of either
+    provider's terms by a person -- treat the quotes above as a starting
+    point for that read, not as a legal conclusion. Whether this
+    architecture is actually permitted, under whose account, and whether
+    it needs a different API tier/agreement, is a decision for whoever
+    operates this deployment, not something resolved by adding this note.
 - **Art. 2(10).** Whether a given deployment/user of VUXIO-AI falls inside
   the Art. 2(10) exclusion (AI used by a natural person in a purely
   personal, non-professional activity) is not resolved here — VUXIO-AI is
@@ -136,8 +182,8 @@ Implemented:
   VOIDSEED demo's single-purpose competition context; requires
   human/legal review.
 - **Third-party model providers' own Art. 53 status.** This document does
-  not audit whether `openai/gpt-oss-120b`, `llama-3.3-70b-versatile`,
-  `llama-3.1-8b-instant`, `openai/gpt-oss-20b`, or `qwen/qwen3.6-27b`
+  not audit whether `openai/gpt-oss-120b`, `openai/gpt-oss-20b`, or
+  `qwen/qwen3.6-27b`
   individually cross the Art. 51 GPAI presumption or Art. 51(2)
   systemic-risk thresholds, or what Groq's/each model provider's own Art.
   53 compliance status is — not this deployer's obligation under Art. 53,

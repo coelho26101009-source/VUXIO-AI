@@ -1,110 +1,110 @@
 import React from 'react';
-import { LogIn, UserCircle2 } from 'lucide-react';
-import { VuxioAvatar } from './VuxioAvatar';
+import { t } from '../i18n';
 
 interface LoginScreenProps {
   onLogin: () => void;
   onGuest: () => void;
+  onOpenAbout: () => void;
   isAuthBusy?: boolean;
   authError?: string | null;
 }
 
-export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onGuest, isAuthBusy = false, authError = null }) => {
+export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onGuest, onOpenAbout, isAuthBusy = false, authError = null }) => {
   return (
-    <div
-      className="flex flex-col items-center justify-center h-screen w-full relative overflow-hidden"
-      style={{ background: 'linear-gradient(160deg, #130d2e 0%, #0b0b1a 50%, #0e0b1f 100%)' }}
-    >
-      {/* Background glow */}
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 pointer-events-none"
-        style={{ width: 600, height: 400, background: 'radial-gradient(ellipse, rgba(124,58,237,0.12) 0%, transparent 70%)', filter: 'blur(40px)' }} />
-      <div className="absolute bottom-0 right-0 pointer-events-none"
-        style={{ width: 400, height: 300, background: 'radial-gradient(ellipse, rgba(236,72,153,0.06) 0%, transparent 70%)', filter: 'blur(60px)' }} />
+    <div className="h-screen w-full overflow-y-auto bg-white text-[#1a1917]">
+      {/* ── Top bar. Grid, not flex justify-between: the wordmark and the
+          guest button have different widths, so justify-between visually
+          off-centers a 3-child nav in the middle slot -- grid's center
+          column centers on the viewport regardless of sibling width. ── */}
+      <header className="grid grid-cols-[1fr_auto_1fr] items-center px-8 py-5">
+        <img src="/logovuxio.png" alt={t('login.wordmark')} className="h-10 w-auto" />
 
-      <div className="relative z-10 flex flex-col items-center w-full max-w-sm px-6">
-        {/* Avatar */}
-        <div className="mb-6">
-          <VuxioAvatar size={72} isConnected={true} isSpeaking={false} />
-        </div>
+        <nav className="hidden md:flex items-center gap-8 text-[14px] text-[#1a1917]/70">
+          <button onClick={onOpenAbout} className="hover:text-[#1a1917] transition-colors">{t('login.nav.about')}</button>
+          <a href="https://github.com/coelho26101009-source/VUXIO-AI" target="_blank" rel="noopener noreferrer" className="hover:text-[#1a1917] transition-colors">{t('login.nav.code')}</a>
+          <a href="https://github.com/coelho26101009-source/VUXIO-AI/blob/main/PRIVACY.md" target="_blank" rel="noopener noreferrer" className="hover:text-[#1a1917] transition-colors">{t('login.nav.privacy')}</a>
+        </nav>
 
-        {/* Title */}
-        <h1
-          className="text-4xl font-black tracking-widest mb-1"
-          style={{
-            background: 'linear-gradient(135deg, #a855f7, #818cf8, #ec4899)',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            backgroundClip: 'text',
-            filter: 'drop-shadow(0 0 24px rgba(168,85,247,0.4))',
-          }}
-        >
-          Vuxio AI
-        </h1>
-        <p className="text-xs uppercase tracking-[0.35em] mb-10"
-          style={{ color: 'rgba(168,85,247,0.45)' }}>
-          Inteligência Artificial Avançada
-        </p>
+        <div />
+      </header>
 
-        {/* Buttons */}
-        <div className="w-full flex flex-col gap-3">
-          <button
-            onClick={onLogin}
-            disabled={isAuthBusy}
-            className="w-full flex items-center justify-center gap-3 py-3.5 px-6 rounded-2xl font-semibold text-sm text-white transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
-            style={{
-              background: 'linear-gradient(135deg, #7c3aed, #6366f1)',
-              boxShadow: '0 4px 24px rgba(124,58,237,0.35)',
-            }}
-            onMouseEnter={e => { if (!isAuthBusy) { e.currentTarget.style.boxShadow = '0 6px 32px rgba(124,58,237,0.55)'; e.currentTarget.style.transform = 'translateY(-1px)'; } }}
-            onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 4px 24px rgba(124,58,237,0.35)'; e.currentTarget.style.transform = 'translateY(0)'; }}
-          >
-            <LogIn size={16} />
-            {isAuthBusy ? 'A abrir login…' : 'Entrar com Google'}
-          </button>
+      {/* ── Hero ── */}
+      <main className="px-6 pb-20">
+        <div className="max-w-[900px] mx-auto text-center pt-16">
+          <p className="text-[13.5px] text-[#1a1917]/45 mb-6">
+            {t('login.breadcrumb')}
+          </p>
+
+          <h1 className="text-[44px] md:text-[52px] leading-[1.1] font-bold tracking-[-0.02em] max-w-[15ch] mx-auto">
+            {t('login.headline')}
+          </h1>
+
+          <p className="mt-6 text-[16px] leading-relaxed text-[#1a1917]/60 max-w-[52ch] mx-auto">
+            {t('login.subhead')}
+          </p>
+
+          <div className="flex items-center justify-center gap-3 mt-9">
+            <button
+              onClick={onLogin}
+              disabled={isAuthBusy}
+              className="px-6 py-3 rounded-xl text-[14.5px] font-medium bg-[#1a1917] text-white hover:bg-[#33302c] transition-[background-color,transform] hover:-translate-y-px active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:translate-y-0"
+              style={{ transitionDuration: 'var(--dur-micro)', transitionTimingFunction: 'var(--ease-out)' }}
+            >
+              {isAuthBusy ? t('login.googleCtaBusy') : t('login.googleCta')}
+            </button>
+            <button
+              onClick={onGuest}
+              disabled={isAuthBusy}
+              className="px-6 py-3 rounded-xl text-[14.5px] font-medium bg-[#f0efec] hover:bg-[#e6e4e0] transition-colors disabled:opacity-50"
+            >
+              {t('login.guestCta')}
+            </button>
+          </div>
 
           {authError && (
-            <div
-              className="px-4 py-3 rounded-2xl text-xs leading-relaxed"
-              style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.18)', color: 'rgba(254,226,226,0.9)' }}
-            >
+            <div className="mt-6 mx-auto max-w-md px-4 py-3 rounded-xl text-[13px] leading-relaxed bg-red-50 border border-red-200 text-red-800">
               {authError}
             </div>
           )}
-
-          <div className="flex items-center gap-3 my-1">
-            <div className="flex-1 h-px" style={{ background: 'rgba(255,255,255,0.06)' }} />
-            <span className="text-xs" style={{ color: 'rgba(255,255,255,0.2)' }}>ou</span>
-            <div className="flex-1 h-px" style={{ background: 'rgba(255,255,255,0.06)' }} />
-          </div>
-
-          <button
-            onClick={onGuest}
-            disabled={isAuthBusy}
-            className="w-full flex items-center justify-center gap-3 py-3.5 px-6 rounded-2xl font-medium text-sm transition-all duration-200"
-            style={{
-              background: 'rgba(255,255,255,0.04)',
-              border: '1px solid rgba(255,255,255,0.08)',
-              color: 'rgba(255,255,255,0.45)',
-            }}
-            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(124,58,237,0.08)'; e.currentTarget.style.color = 'rgba(255,255,255,0.7)'; e.currentTarget.style.borderColor = 'rgba(139,92,246,0.2)'; }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; e.currentTarget.style.color = 'rgba(255,255,255,0.45)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'; }}
-          >
-            <UserCircle2 size={16} />
-            Continuar sem conta
-          </button>
         </div>
 
-        <p className="text-xs mt-6 text-center leading-relaxed" style={{ color: 'rgba(255,255,255,0.15)' }}>
-          Sem conta, o histórico de conversas não é guardado.
-        </p>
-        {/* GDPR (Art. 13): entering with Google saves the opposite -- every
-            conversation, tied to that account, indefinitely (see
-            PRIVACY.md). Kept next to the guest line above so both are read
-            together, not just the reassuring one. */}
-        <p className="text-xs mt-1 text-center leading-relaxed" style={{ color: 'rgba(255,255,255,0.15)' }}>
-          Ao entrar com o Google, as tuas conversas ficam guardadas na tua conta.
-        </p>
-      </div>
+        {/* ── Hero panel ── */}
+        <div className="max-w-[1040px] mx-auto mt-14 rounded-3xl bg-[#f4f3f0] overflow-hidden">
+          <div className="px-8 md:px-14 py-14 grid md:grid-cols-3 gap-10">
+            <div>
+              <h3 className="text-[16px] font-semibold mb-2">{t('login.feature.code.title')}</h3>
+              <p className="text-[14px] leading-relaxed text-[#1a1917]/60">
+                {t('login.feature.code.body')}
+              </p>
+            </div>
+            <div>
+              <h3 className="text-[16px] font-semibold mb-2">{t('login.feature.web.title')}</h3>
+              <p className="text-[14px] leading-relaxed text-[#1a1917]/60">
+                {t('login.feature.web.body')}
+              </p>
+            </div>
+            <div>
+              <h3 className="text-[16px] font-semibold mb-2">{t('login.feature.memory.title')}</h3>
+              <p className="text-[14px] leading-relaxed text-[#1a1917]/60">
+                {t('login.feature.memory.bodyPrefix')}
+                {' '}<code className="font-mono text-[13px] bg-[#e6e4e0] px-1.5 py-0.5 rounded">/remember</code>
+                {' '}{t('login.feature.memory.bodySuffix')}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* GDPR (Art. 13): both paths stated together -- the guest line alone
+            reads as reassurance, so the account line sits beside it. */}
+        <div className="max-w-[1040px] mx-auto mt-8 text-center space-y-1">
+          <p className="text-[13px] text-[#1a1917]/45">
+            {t('login.noticeGuest')}
+          </p>
+          <p className="text-[13px] text-[#1a1917]/45">
+            {t('login.noticeAccount')}
+          </p>
+        </div>
+      </main>
     </div>
   );
 };

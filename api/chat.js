@@ -6,14 +6,14 @@ const TEXT_MODEL = 'openai/gpt-oss-120b';
 const VISION_MODEL = 'qwen/qwen3.6-27b';
 // Code Mode's model used to be groq/compound for its agentic built-in code
 // execution, but compound categorically rejects requests carrying custom
-// tools (see the streamGroq comment near requestBody.tools) -- every
+// tools (see the streamCompletion comment near requestBody.tools) -- every
 // create_file request in Code Mode 400'd the whole completion, not just the
 // tool call. Reusing TEXT_MODEL instead: same model Standard mode already
 // uses successfully with create_file, and Groq's own docs confirm gpt-oss-120b
 // has native tool-calling support plus near-parity with o4-mini on reasoning
 // and solid SWE-bench/coding results -- a real model swap, not a downgrade.
 const CODE_FALLBACK_MODEL = TEXT_MODEL;
-// Referenced only by the tools guard in streamGroq below -- kept as its own
+// Referenced only by the tools guard in streamCompletion below -- kept as its own
 // constant since it's no longer the same value as CODE_FALLBACK_MODEL.
 const COMPOUND_MODEL = 'groq/compound';
 
@@ -21,11 +21,85 @@ const COMPOUND_MODEL = 'groq/compound';
 // below can route to. groq/compound and groq/compound-mini are deliberately
 // absent from both: they 400 on any request carrying custom tools, and
 // create_file is offered in every mode (see the toolsForModel guard in
-// streamGroq).
-const FAST_MODEL = 'llama-3.1-8b-instant';
-const LARGE_MODEL = 'llama-3.3-70b-versatile';
+// streamCompletion).
+//
+// llama-3.1-8b-instant and llama-3.3-70b-versatile were removed here on
+// 2026-08-13: Groq's deprecation page (console.groq.com/docs/deprecations)
+// shuts both down on 2026-08-16, and names openai/gpt-oss-20b and
+// openai/gpt-oss-120b respectively as the replacements -- which this file
+// already used, so the lineup collapses to two text models rather than four.
+// qwen/qwen3.6-27b is NOT added as a selectable text model despite being the
+// other suggested replacement: Groq lists it as preview, and their docs say
+// preview models are for evaluation only and may be discontinued. It stays
+// confined to VISION_MODEL, where there is no production alternative.
 const LIGHT_MODEL = 'openai/gpt-oss-20b';
-const SELECTABLE_MODELS = ['auto', TEXT_MODEL, LIGHT_MODEL, LARGE_MODEL, FAST_MODEL];
+
+// Verified against Google's own pricing page (ai.google.dev/gemini-api/docs/pricing,
+// checked 2026-08-13, re-checked after an earlier gap was caught): its
+// free-tier column reads "Free of charge" for gemini-2.5-pro, gemini-3.7-flash,
+// gemini-3.6-flash, and gemini-3.5-flash-lite -- all four included below.
+// gemini-3.1-pro-preview -- the model originally asked for as a "strong
+// tier" pick -- is the one that's genuinely paid-only (that column reads
+// "Not available" for it specifically, not "Free of charge"); the first pass
+// wrongly generalized from that single preview model to "no free Gemini Pro
+// exists" without separately checking the stable, non-preview 2.5-pro, which
+// does have free access. gemini-2.5-flash and plain gemini-3.5-flash were
+// considered too but dropped as near-duplicates of 3.6/3.7-flash once 2.5-pro
+// covers the distinct "different generation" niche instead.
+// Manual pick only, not part of autoStandardModel below -- Auto stays
+// Groq-only so its routing heuristic doesn't need a cross-provider quality
+// comparison nobody has asked for. Frontend tiering (Strong/Medium/Economy)
+// lives in InputBar.tsx's MODEL_TIERS -- this list only needs to accept them.
+const GEMINI_MODELS = ['gemini-2.5-pro', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite'];
+
+// Pulled from OpenRouter's own public catalog (openrouter.ai/api/v1/models,
+// checked 2026-08-13, no key required to list) and filtered to entries with
+// prompt AND completion pricing both 0. That endpoint returned 18 free
+// entries; four are excluded here even though they're priced at 0 per token:
+// google/lyria-3-pro-preview and google/lyria-3-clip-preview are music
+// generation (billed per song/clip instead, per their own descriptions, so
+// "free" only describes the token price, not real usage cost) --
+// nvidia/nemotron-3.5-content-safety is a moderation classifier, not a chat
+// model -- and openrouter/free is a router that "selects free models at
+// random," which would make identityRule's "you are running on model X"
+// untrue for whatever it silently picked. The other 14 are real text
+// chat/reasoning/coding models and are listed here.
+//
+// Rate limits (openrouter.ai/docs/api-reference/limits, same check date):
+// 20 requests/minute, and 50/day per account with no purchased credits ever
+// (1000/day once $10+ has been purchased at any point) -- pooled across
+// every :free model on the account, not per model. More choice here does not
+// mean more total free requests.
+const OPENROUTER_MODELS = [
+  'nvidia/nemotron-3-ultra-550b-a55b:free',
+  'nvidia/nemotron-3-super-120b-a12b:free',
+  'poolside/laguna-s-2.1:free',
+  'google/gemma-4-31b-it:free',
+  'google/gemma-4-26b-a4b-it:free',
+  'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
+  'poolside/laguna-xs-2.1:free',
+  'cohere/north-mini-code:free',
+  'nvidia/nemotron-3-nano-30b-a3b:free',
+  'nvidia/nemotron-3.5-lightning:free',
+  'nvidia/nemotron-nano-12b-v2-vl:free',
+  'nvidia/nemotron-nano-9b-v2:free',
+  'liquid/lfm-2.5-2.6b:free',
+  'openai/gpt-oss-20b:free',
+];
+const SELECTABLE_MODELS = ['auto', TEXT_MODEL, LIGHT_MODEL, ...GEMINI_MODELS, ...OPENROUTER_MODELS];
+
+// Every OpenRouter free-tier id in the list above ends in ':free' -- checked
+// first and specifically, because a prefix check alone is not safe here:
+// OpenRouter's own 'openai/gpt-oss-20b:free' shares the exact 'openai/'
+// namespace Groq's real openai/gpt-oss-120b and openai/gpt-oss-20b already
+// use, and a naive startsWith('openai/') branch would misroute Groq's own
+// models to OpenRouter's endpoint and key. ':free' never appears in a Groq
+// or Gemini id, so it's an unambiguous signal.
+const providerForModel = (model) => {
+  if (model.endsWith(':free')) return 'openrouter';
+  if (model.startsWith('gemini-')) return 'gemini';
+  return 'groq';
+};
 
 // Available in every mode (used to be Code/Web only, see the fileToolNote comment
 // below for why that turned out wrong).
@@ -63,6 +137,10 @@ const MAX_MEMORY_LENGTH = 500;
 const MAX_MCP_SERVERS = 5;
 const MAX_MCP_URL_LENGTH = 500;
 const MAX_MCP_NAME_LENGTH = 100;
+// Groq keys are "gsk_" + a fixed-length token, well under 100 chars -- this
+// just bounds an obviously-wrong paste before it goes out as an Authorization
+// header, not a format check (Groq's own API is what actually rejects a bad key).
+const MAX_GROQ_API_KEY_LENGTH = 200;
 const requests = new Map();
 
 const sendEvent = (res, event, payload) => {
@@ -98,10 +176,16 @@ const LANGUAGE_RULE = 'Responde sempre no mesmo idioma que o utilizador usar na 
 // selectedModel can both send Groq a model other than TEXT_MODEL, and a
 // hardcoded name here would restate the exact hallucination this rule exists
 // to prevent, just from the prompt instead of the model's training data.
-const identityRule = (model) => `Corres no modelo ${model}, servido pela Groq. Pedidos com imagem anexada usam ${VISION_MODEL} para visão. Nunca inventes outro nome de modelo (ex: GPT-4, GPT-4-turbo, Claude, Gemini) -- se te perguntarem sobre o teu funcionamento interno e não tiveres a certeza de algo, diz isso abertamente em vez de inventar uma resposta.`;
+// `provider` is the same value the handler computed via providerForModel (or
+// forced to 'groq' for an image attachment) -- passed in rather than
+// re-derived, since forcing VISION_MODEL for images already lives there.
+// Not a fixed list of "forbidden" names either, now that Gemini can be the
+// real answer: naming specific brands as always-wrong stopped being true.
+const PROVIDER_DISPLAY_NAMES = { groq: 'Groq', gemini: 'Google (Gemini API)', openrouter: 'OpenRouter' };
+const identityRule = (model, provider) => `Corres no modelo ${model}, servido pela ${PROVIDER_DISPLAY_NAMES[provider]}. Pedidos com imagem anexada usam ${VISION_MODEL}, servido pela Groq, para visão -- mesmo que o modelo de texto escolhido seja outro. Nunca inventes um nome de modelo ou fornecedor diferente do indicado aqui -- se te perguntarem sobre o teu funcionamento interno e não tiveres a certeza de algo, diz isso abertamente em vez de inventar uma resposta.`;
 
-const codePrompt = (userName, model) => `Tu és o VUXIO em modo PROGRAMADOR. Utilizador: ${userName}.
-${LANGUAGE_RULE} ${identityRule(model)} Sê direto e técnico, sem floreados.
+const codePrompt = (userName, model, provider) => `Tu és o VUXIO em modo PROGRAMADOR. Utilizador: ${userName}.
+${LANGUAGE_RULE} ${identityRule(model, provider)} Sê direto e técnico, sem floreados.
 
 Comporta-te como um engenheiro sénior a fazer manutenção a longo prazo, não como quem quer parecer inteligente:
 - Percebe o problema real antes de responder. Se o pedido for ambíguo ou faltar contexto, pergunta em vez de assumir.
@@ -112,7 +196,7 @@ Comporta-te como um engenheiro sénior a fazer manutenção a longo prazo, não 
 - Separa observações de recomendações -- diz claramente o que é facto ("isto está a fazer X") do que é sugestão tua ("sugiro mudar para Y, porque Z").
 - Se não tiveres a certeza de algo, diz isso abertamente em vez de inventar uma resposta confiante.`;
 
-const standardPrompt = (userName, model) => `Tu és o VUXIO, um assistente simpático criado pelo Simão. Utilizador: ${userName}. ${LANGUAGE_RULE} ${identityRule(model)} Tom caloroso e direto. Código só se pedido explicitamente. Mantém a resposta curta, salvo pedido de detalhe.`;
+const standardPrompt = (userName, model, provider) => `Tu és o VUXIO, um assistente simpático criado pelo Simão. Utilizador: ${userName}. ${LANGUAGE_RULE} ${identityRule(model, provider)} Tom caloroso e direto. Código só se pedido explicitamente. Mantém a resposta curta, salvo pedido de detalhe.`;
 
 const parseBody = (body) => typeof body === 'string' ? JSON.parse(body) : body;
 
@@ -250,8 +334,17 @@ const validate = (body) => {
   if (body.temperature !== undefined && (typeof body.temperature !== 'number' || !Number.isFinite(body.temperature) || body.temperature < 0 || body.temperature > 2)) {
     throw new Error('Temperatura inválida.');
   }
+  if (body.researchMode !== undefined && typeof body.researchMode !== 'boolean') {
+    throw new Error('Modo de investigação inválido.');
+  }
+  if (body.locale !== undefined && !['pt', 'en'].includes(body.locale)) {
+    throw new Error('Idioma inválido.');
+  }
   if (body.selectedModel !== undefined && !SELECTABLE_MODELS.includes(body.selectedModel)) {
     throw new Error('Modelo inválido.');
+  }
+  if (body.groqApiKey !== undefined && (typeof body.groqApiKey !== 'string' || body.groqApiKey.length > MAX_GROQ_API_KEY_LENGTH)) {
+    throw new Error('Chave da API inválida.');
   }
   if (body.memories !== undefined) {
     if (!Array.isArray(body.memories) || body.memories.length > MAX_MEMORIES) throw new Error('Memórias inválidas.');
@@ -272,7 +365,7 @@ const validate = (body) => {
   }
 };
 
-const getWebContext = async (query) => {
+const tavilySearch = async ({ query, depth = 'basic', maxResults = 5, signal }) => {
   if (!process.env.TAVILY_API_KEY || !query) return [];
   // Tavily authenticates with a Bearer header; the api_key-in-body form this
   // used to send is no longer accepted, so every search failed the !ok check
@@ -283,12 +376,163 @@ const getWebContext = async (query) => {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${process.env.TAVILY_API_KEY}`,
     },
-    body: JSON.stringify({ query, search_depth: 'basic', max_results: 5 }),
+    body: JSON.stringify({ query, search_depth: depth, max_results: maxResults }),
+    signal,
   });
   if (!response.ok) return [];
   const data = await response.json();
-  return (data.results ?? []).slice(0, 5).map(({ title, url, content }) => ({ title, url, content }));
+  return (data.results ?? []).slice(0, maxResults).map(({ title, url, content }) => ({ title, url, content }));
 };
+
+const getWebContext = (query) => tavilySearch({ query, depth: 'basic', maxResults: 5 });
+
+// --- Research mode ------------------------------------------------------
+//
+// SIMPLIFICATION: one planning pass -> one parallel batch of searches -> one
+// synthesis. Not an iterative agent loop (search, read, re-plan, search
+// again), because vercel.json caps this function at 60s and a second search
+// round does not fit alongside a long synthesis. Timing budget at the time of
+// writing: planning ~2-4s, parallel advanced searches ~6-12s, synthesis
+// ~25-40s. If the cap is ever raised, the upgrade is to loop steps 2-3 with
+// the model choosing follow-up queries; nothing in the SSE contract changes.
+const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
+// Verified against Google's own docs (ai.google.dev/gemini-api/docs/openai,
+// checked 2026-08-13): this endpoint accepts the same request shape Groq
+// does (model/messages/stream/tools/temperature), the same Bearer auth, and
+// the same OpenAI-style SSE delta chunks -- runCompletion below is shared
+// between both providers rather than needing a second parser. Not
+// live-verified against a real Gemini key from this environment though
+// (no key available here); DOCUMENTED, not OBSERVED. Worth a real smoke
+// test after deploying, particularly the streamed tool_calls shape.
+const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
+// Verified against OpenRouter's own docs (openrouter.ai/docs/api-reference/chat-completion,
+// checked 2026-08-13): OpenAI-compatible request/response shape, Bearer auth,
+// SSE streaming with the same [DONE] terminator and delta.tool_calls shape
+// Groq/Gemini already use -- same runCompletion path, no new parser. Also
+// not live-verified against a real key from this environment; DOCUMENTED,
+// not OBSERVED, same caveat as GEMINI_URL above.
+const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
+
+// Verified against Groq's own docs (console.groq.com/docs/rate-limits,
+// checked 2026-08-13): every completion response carries these headers.
+// limit/remaining-requests are Requests Per Day (the "daily limit" a user
+// actually cares about); limit/remaining-tokens are Tokens Per Minute.
+// Reset values are Go-style durations ("2m59.56s", "23h1m2s"), not plain
+// seconds -- parseGroqResetDuration below converts them.
+const parseGroqResetDuration = (value) => {
+  if (!value) return undefined;
+  const match = value.match(/^(?:(\d+)h)?(?:(\d+)m)?(?:([\d.]+)s)?$/);
+  if (!match) return undefined;
+  const [, h, m, s] = match;
+  return (Number(h || 0) * 3600) + (Number(m || 0) * 60) + Number(s || 0);
+};
+
+const numberHeader = (headers, name) => {
+  const value = headers.get(name);
+  return value !== null ? Number(value) : undefined;
+};
+
+const parseGroqLimits = (headers) => {
+  const limitRequests = numberHeader(headers, 'x-ratelimit-limit-requests');
+  const limitTokens = numberHeader(headers, 'x-ratelimit-limit-tokens');
+  if (limitRequests === undefined && limitTokens === undefined) return null;
+  return {
+    limitRequests,
+    remainingRequests: numberHeader(headers, 'x-ratelimit-remaining-requests'),
+    resetRequestsSeconds: parseGroqResetDuration(headers.get('x-ratelimit-reset-requests')),
+    limitTokens,
+    remainingTokens: numberHeader(headers, 'x-ratelimit-remaining-tokens'),
+    resetTokensSeconds: parseGroqResetDuration(headers.get('x-ratelimit-reset-tokens')),
+  };
+};
+
+const RESEARCH_MAX_QUERIES = 6;
+const RESEARCH_RESULTS_PER_QUERY = 5;
+// The planner only emits a short JSON array, so it wants the fastest model
+// available rather than the smartest -- LIGHT_MODEL is the quickest Groq
+// still serves in production (1000 T/s at the time of writing).
+const RESEARCH_PLANNER_MODEL = LIGHT_MODEL;
+
+/** Break the question into focused sub-queries. Falls back to the question
+ *  itself -- a planning failure must degrade to a shallower search, never to
+ *  no search at all. */
+const planResearch = async (question, signal, apiKey) => {
+  const fallback = [question];
+  try {
+    const response = await fetch(GROQ_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      signal,
+      body: JSON.stringify({
+        model: RESEARCH_PLANNER_MODEL,
+        temperature: 0.3,
+        response_format: { type: 'json_object' },
+        messages: [
+          {
+            role: 'system',
+            content: `Planeias investigação. Devolve APENAS JSON: {"queries": ["...", "..."]}.
+Regras:
+- Entre 4 e ${RESEARCH_MAX_QUERIES} queries de pesquisa, cada uma cobrindo um ângulo DIFERENTE do tema (definição, estado atual, dados/números, críticas, comparações, futuro).
+- Escreve as queries no idioma com maior probabilidade de ter boas fontes sobre o tema.
+- Queries curtas e específicas, como se escrevesse num motor de busca. Sem numeração, sem explicações.`,
+          },
+          { role: 'user', content: question },
+        ],
+      }),
+    });
+    if (!response.ok) return fallback;
+    const data = await response.json();
+    const parsed = JSON.parse(data.choices?.[0]?.message?.content || '{}');
+    const queries = (parsed.queries ?? [])
+      .filter((q) => typeof q === 'string' && q.trim())
+      .map((q) => q.trim())
+      .slice(0, RESEARCH_MAX_QUERIES);
+    return queries.length ? queries : fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+/** Run every sub-query in parallel and merge into one deduplicated source
+ *  list. Parallel because the 60s budget is wall clock -- sequential searches
+ *  would multiply latency by the number of queries. */
+const runResearchSearches = async (queries, signal) => {
+  const batches = await Promise.all(
+    queries.map((query) =>
+      tavilySearch({ query, depth: 'advanced', maxResults: RESEARCH_RESULTS_PER_QUERY, signal })
+        .catch(() => []),
+    ),
+  );
+  const byUrl = new Map();
+  batches.flat().forEach((result) => {
+    if (result?.url && !byUrl.has(result.url)) byUrl.set(result.url, result);
+  });
+  return [...byUrl.values()];
+};
+
+const researchContext = (queries, results) => `
+
+MODO INVESTIGAÇÃO -- escreves um relatório de investigação, não uma resposta de chat.
+
+Ângulos pesquisados:
+${queries.map((q, i) => `${i + 1}. ${q}`).join('\n')}
+
+Fontes recolhidas (${results.length}):
+${results.map((r, i) => `[${i + 1}] ${r.title}\n${r.url}\n${r.content}`).join('\n\n')}
+
+FORMATO OBRIGATÓRIO DO RELATÓRIO (Markdown):
+- Começa com "# " e um título do relatório.
+- "## Resumo" -- 3 a 5 bullets com as conclusões principais, cada um com a sua citação.
+- Depois secções "## " temáticas que cubram os ângulos acima. Usa "### " para subsecções quando fizer sentido.
+- "## Limitações" -- o que as fontes NÃO respondem, contradições entre elas, e informação possivelmente desatualizada. Esta secção é obrigatória e nunca pode dizer apenas "nenhuma".
+- "## Fontes" -- lista Markdown numerada, título + link, apenas das fontes que citaste.
+
+REGRAS:
+- Cita com [n] imediatamente a seguir à afirmação que a fonte suporta, não só no fim.
+- Não inventes factos, números ou datas que não estejam nas fontes. Se algo for inferência tua, escreve que é inferência.
+- Se as fontes discordarem, apresenta as duas versões e diz qual é mais bem suportada e porquê.
+- Relatório extenso e detalhado -- é o objetivo do modo. Prefere profundidade a brevidade.
+- Não uses a tool create_file neste modo.`;
 
 // --- MCP (remote HTTP servers only) -------------------------------------
 //
@@ -442,8 +686,8 @@ async function callMcpTool(tool, args) {
   }
 }
 
-async function streamGroq({ messages, system, attachment, onChunk, onFile, onModel, signal, textModel = TEXT_MODEL, tools, temperature = 0.7, mcpToolsByName = {} }) {
-  if (!process.env.GROQ_API_KEY) throw new Error('O serviço de IA não está configurado.');
+async function streamCompletion({ messages, system, attachment, onChunk, onFile, onModel, signal, textModel = TEXT_MODEL, tools, temperature = 0.7, mcpToolsByName = {}, apiKey, onLimits, baseUrl = GROQ_URL }) {
+  if (!apiKey) throw new Error('O serviço de IA não está configurado.');
   // A text/code file (.c, .py, ...) is read client-side as plain text rather than
   // base64 -- it goes straight into the message as text, not through the
   // image_url/vision path below, since a vision model can't meaningfully accept
@@ -471,7 +715,7 @@ async function streamGroq({ messages, system, attachment, onChunk, onFile, onMod
   // Fired only once the request has passed every check above that can still
   // reject it outright (missing key, image attachment that isn't actually an
   // image) -- announcing the model any earlier, e.g. in the handler before
-  // streamGroq runs, sent a real model name over SSE for a request about to
+  // streamCompletion runs, sent a real model name over SSE for a request about to
   // fail anyway (a PDF attachment in Standard mode), immediately followed by
   // event: error.
   onModel?.(model);
@@ -509,7 +753,7 @@ async function streamGroq({ messages, system, attachment, onChunk, onFile, onMod
     };
     let completion;
     try {
-      completion = await runCompletion(apiMessages, { model, temperature, tools: roundTools, signal, onChunk: guardedOnChunk });
+      completion = await runCompletion(apiMessages, { model, temperature, tools: roundTools, signal, onChunk: guardedOnChunk, apiKey, onLimits, baseUrl });
     } catch (err) {
       // A malformed tool schema can still make Groq reject the whole
       // completion before any content streams, despite the coercion in
@@ -522,7 +766,7 @@ async function streamGroq({ messages, system, attachment, onChunk, onFile, onMod
       // real outage (bad key, Groq down), where retrying just doubles the
       // latency before the same error.
       if (!roundTools || !hasMcpTools || streamedThisRound) throw err;
-      completion = await runCompletion(apiMessages, { model, temperature, tools: undefined, signal, onChunk });
+      completion = await runCompletion(apiMessages, { model, temperature, tools: undefined, signal, onChunk, apiKey, onLimits, baseUrl });
     }
     const { content, toolCalls } = completion;
 
@@ -560,14 +804,26 @@ async function streamGroq({ messages, system, attachment, onChunk, onFile, onMod
   }
 }
 
-async function runCompletion(apiMessages, { model, temperature, tools, signal, onChunk }) {
+async function runCompletion(apiMessages, { model, temperature, tools, signal, onChunk, apiKey, onLimits, baseUrl = GROQ_URL }) {
   const requestBody = { model, messages: apiMessages, temperature, stream: true };
-  if (tools) requestBody.tools = tools;
-  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+  // Length-checked, not just truthy: an empty array is truthy, so research
+  // mode (which deliberately offers no tools) would otherwise send
+  // "tools": [] -- a shape some OpenAI-compatible endpoints reject outright.
+  if (tools?.length) requestBody.tools = tools;
+  const response = await fetch(baseUrl, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
     body: JSON.stringify(requestBody), signal,
   });
+  // Read before the ok-check: a 429 response still carries the rate-limit
+  // headers (arguably the most useful moment to see them), and response
+  // headers are available as soon as fetch resolves, before the body streams.
+  // Optional: the test suite's fetch stubs return plain objects without a
+  // real Headers instance, and a missing reading here means "no data yet",
+  // the same as parseGroqLimits returning null for a Groq response that
+  // omits the rate-limit headers.
+  const limits = response.headers ? parseGroqLimits(response.headers) : null;
+  if (limits) onLimits?.(limits);
   if (!response.ok || !response.body) throw new Error('Não foi possível contactar o modelo de IA.');
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -609,25 +865,33 @@ async function runCompletion(apiMessages, { model, temperature, tools, signal, o
 }
 
 // Auto routing for Standard mode, no attachment (Code mode and image
-// attachments are decided by pickTextModel/streamGroq before this runs).
+// attachments are decided by pickTextModel/streamCompletion before this runs).
 // Bucketed by crude length/shape signals, not real complexity classification
-// -- a short but technical message ("prove P=NP") is under-routed to the fast
-// model, and there is no attempt here to detect "math-heavy" content beyond
-// a code fence. Thresholds: under 50 chars with no code fence -> fastest
-// model; 50-200 chars -> mid-size model; 200+ chars or a code fence -> flagship.
+// -- a short but technical message ("prove P=NP") is under-routed to the
+// lighter model, and there is no attempt here to detect "math-heavy" content
+// beyond a code fence.
+//
+// Two tiers, not three, since the Llama retirement (see SELECTABLE_MODELS):
+// the old 50-200 char bucket went to llama-3.3-70b-versatile, and its
+// replacement is TEXT_MODEL, which that bucket now shares with the 200+ one.
+// That bucket gets strictly better on both axes -- at the prices Groq listed
+// when this was written, gpt-oss-120b is cheaper ($0.15/$0.60 per M tokens vs
+// $0.59/$0.79) and faster (500 vs 280 T/s) than the 70B it replaces.
 const autoStandardModel = (content) => {
-  if (content.length >= 200 || content.includes('```')) return TEXT_MODEL;
-  if (content.length >= 50) return LARGE_MODEL;
-  return FAST_MODEL;
+  if (content.length >= 50 || content.includes('```')) return TEXT_MODEL;
+  return LIGHT_MODEL;
 };
 
 // Picks the text model for this request (an image attachment overrides this
 // with VISION_MODEL separately -- see isImageAttachment in the handler and
-// streamGroq's own model selection). Manual selection wins over Auto
+// streamCompletion's own model selection). Manual selection wins over Auto
 // regardless of mode; Auto itself still special-cases Code mode, since a
 // flagship model is worth the latency there.
 const pickTextModel = (body) => {
   if (body.selectedModel && body.selectedModel !== 'auto') return body.selectedModel;
+  // A research report is long and structured -- never let Auto route it to a
+  // small model by message length the way a normal chat turn is routed.
+  if (body.researchMode) return TEXT_MODEL;
   if (body.mode === 'code') return CODE_FALLBACK_MODEL;
   // A non-image attachment (an image forces VISION_MODEL separately, see
   // above) carries unpredictable, often technical content the user's short
@@ -649,16 +913,87 @@ export default async function handler(req, res) {
     res.on('close', () => controller.abort());
     const body = parseBody(req.body);
     validate(body);
+    // A user's own key, sent fresh on every request and never written to any
+    // store here -- falls back to the shared deployment key when absent. Never
+    // logged: keep it out of every console.log/error path in this handler.
+    const groqApiKey = body.groqApiKey?.trim() || process.env.GROQ_API_KEY;
     // Resolved before the system prompt is built (below), not after: the prompt's
     // IDENTITY_RULE needs to name the model that will actually answer, and
-    // streamGroq itself re-derives this same isImageAttachment -> VISION_MODEL
+    // streamCompletion itself re-derives this same isImageAttachment -> VISION_MODEL
     // override when it builds the real request.
     const isImageAttachment = body.attachment && typeof body.attachment.text !== 'string';
     const textModel = pickTextModel(body);
     const resolvedModel = isImageAttachment ? VISION_MODEL : textModel;
+    // An image attachment always answers on Groq's vision model regardless of
+    // which text model was picked -- the same override resolvedModel above
+    // applies, kept in sync rather than re-derived from resolvedModel to make
+    // the "vision forces Groq" rule explicit at the read site.
+    const provider = isImageAttachment ? 'groq' : providerForModel(textModel);
+    // No BYOK for Gemini/OpenRouter yet (Settings > Advanced only takes a
+    // Groq key) -- see the ROADMAP note this extends once they need it.
+    const PROVIDER_CONFIG = {
+      groq: { apiKey: groqApiKey, baseUrl: GROQ_URL },
+      gemini: { apiKey: process.env.GEMINI_API_KEY, baseUrl: GEMINI_URL },
+      openrouter: { apiKey: process.env.OPENROUTER_API_KEY, baseUrl: OPENROUTER_URL },
+    };
+    const { apiKey, baseUrl } = PROVIDER_CONFIG[provider];
     const latestMessage = body.messages.at(-1).content;
-    const results = body.webMode ? await getWebContext(latestMessage) : [];
-    const webContext = results.length ? `\n\nResultados de pesquisa web:\n${results.map((r, i) => `[${i + 1}] ${r.title}\n${r.url}\n${r.content}`).join('\n\n')}\n\nEstilo de resposta com pesquisa web:
+
+    // Idempotent: research mode has to open the stream early to report
+    // progress (its searches alone take 10s+, and the user would otherwise
+    // stare at nothing), while every other path opens it just before
+    // streaming. Calling setHeader after flushHeaders throws, so the flag is
+    // what keeps both callers safe.
+    let streamStarted = false;
+    const beginStream = () => {
+      if (streamStarted) return;
+      streamStarted = true;
+      res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-cache, no-transform');
+      res.setHeader('Connection', 'keep-alive');
+      res.flushHeaders?.();
+    };
+    if (body.researchMode) beginStream();
+    const researchStep = (step, detail) => {
+      if (body.researchMode) sendEvent(res, 'research_step', { step, detail });
+    };
+
+    // Only these four progress strings need a translation on the server --
+    // everything else the client shows is static UI chrome, already covered
+    // by src/i18n.ts, and the model's own reply already mirrors whatever
+    // language the user typed in (see LANGUAGE_RULE above). `body.locale` is
+    // the client's detectLocale() result, not user input from a form field.
+    const RESEARCH_STRINGS = {
+      pt: {
+        plan: 'A planear a investigação',
+        search: (n) => `A pesquisar ${n} ângulos`,
+        read: (n) => `${n} fontes recolhidas`,
+        write: 'A escrever o relatório',
+      },
+      en: {
+        plan: 'Planning the research',
+        search: (n) => `Searching ${n} angles`,
+        read: (n) => `${n} sources gathered`,
+        write: 'Writing the report',
+      },
+    };
+    const rs = RESEARCH_STRINGS[body.locale === 'pt' ? 'pt' : 'en'];
+
+    let researchQueries = [];
+    let results = [];
+    if (body.researchMode) {
+      researchStep('plan', rs.plan);
+      researchQueries = await planResearch(latestMessage, controller.signal, groqApiKey);
+      researchStep('search', rs.search(researchQueries.length));
+      results = await runResearchSearches(researchQueries, controller.signal);
+      researchStep('read', rs.read(results.length));
+      researchStep('write', rs.write);
+    } else if (body.webMode) {
+      results = await getWebContext(latestMessage);
+    }
+    const webContext = body.researchMode
+      ? researchContext(researchQueries, results)
+      : results.length ? `\n\nResultados de pesquisa web:\n${results.map((r, i) => `[${i + 1}] ${r.title}\n${r.url}\n${r.content}`).join('\n\n')}\n\nEstilo de resposta com pesquisa web:
 - Sintetiza as fontes numa resposta direta e coerente -- não te limites a listá-las ou a parafrasear cada uma em separado.
 - Cita a fonte logo a seguir à afirmação que ela suporta, com o número entre parênteses retos (ex: "X aconteceu em 2024 [1][3]."), não só no fim da resposta.
 - Se as fontes discordarem entre si ou a informação estiver desatualizada, diz isso explicitamente em vez de escolheres uma versão silenciosamente.
@@ -685,33 +1020,44 @@ export default async function handler(req, res) {
     const memoryContext = memories.length
       ? `\n\nMEMÓRIAS GUARDADAS (fornecidas explicitamente pelo utilizador via /remember -- não são factos verificados, são contexto de fundo; não as repitas literalmente a menos que seja relevante para a resposta):\n${memories.map((memory) => `- ${memory}`).join('\n')}`
       : '';
-    const system = (body.mode === 'code' ? codePrompt(body.userName || 'Utilizador', resolvedModel) : standardPrompt(body.userName || 'Utilizador', resolvedModel)) + webContext + fileToolNote + memoryContext;
+    const system = (body.mode === 'code' ? codePrompt(body.userName || 'Utilizador', resolvedModel, provider) : standardPrompt(body.userName || 'Utilizador', resolvedModel, provider)) + webContext + fileToolNote + memoryContext;
     // isImageAttachment also gates MCP discovery: an image attachment forces
     // the vision model, which drops every tool including MCP ones (see the
-    // toolsForModel guard in streamGroq). Discovering tools that will just be
+    // toolsForModel guard in streamCompletion). Discovering tools that will just be
     // thrown away costs up to MCP_TIMEOUT_MS of latency before the first byte,
     // for nothing the model is ever offered.
     const mcpServers = !isImageAttachment && Array.isArray(body.mcpServers) ? body.mcpServers : [];
     const mcpTools = mcpServers.length ? await discoverMcpTools(mcpServers) : [];
     const mcpToolsByName = Object.fromEntries(mcpTools.map((tool) => [tool.name, tool]));
-    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
-    res.setHeader('Cache-Control', 'no-cache, no-transform');
-    res.setHeader('Connection', 'keep-alive');
-    res.flushHeaders?.();
+    beginStream();
     if (results.length) sendEvent(res, 'sources', results.map(({ title, url }) => ({ title, url })));
-    await streamGroq({
+    await streamCompletion({
       messages: body.messages, system, attachment: body.attachment, signal: controller.signal,
       textModel,
-      tools: [...TOOLS, ...mcpTools.map((tool) => tool.definition)],
-      temperature: body.temperature ?? 0.7,
+      // Research mode gets no tools: the deliverable is one long report, and
+      // a create_file call mid-report truncates it. Enforced here rather than
+      // only asked for in the prompt.
+      tools: body.researchMode ? [] : [...TOOLS, ...mcpTools.map((tool) => tool.definition)],
+      // Code mode always runs at 0.3, ignoring the client's temperature --
+      // low temperature is what makes generated code deterministic and
+      // syntactically reliable; the Settings slider is for Standard mode's
+      // prose, where variety is actually wanted.
+      temperature: body.mode === 'code' ? 0.3 : body.temperature ?? 0.7,
       mcpToolsByName,
-      // Fired by streamGroq itself once the request has cleared every check
+      // Fired by streamCompletion itself once the request has cleared every check
       // that could still reject it (see the onModel comment there) -- not
       // sent up front here, which used to announce a real model over SSE for
       // requests about to fail anyway (e.g. a PDF attachment in Standard mode).
       onModel: (model) => sendEvent(res, 'model', { model }),
       onChunk: (text) => text && sendEvent(res, 'chunk', text),
       onFile: (filename, content) => sendEvent(res, 'file', { filename, content }),
+      apiKey,
+      baseUrl,
+      // Groq-only in practice: parseGroqLimits only recognizes Groq's header
+      // names, so a Gemini response (different headers, or none of these)
+      // yields null and this never fires for that provider -- no separate
+      // guard needed here for it.
+      onLimits: (limits) => sendEvent(res, 'limits', limits),
     });
     sendEvent(res, 'done', null);
     res.end();

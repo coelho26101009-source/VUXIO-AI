@@ -38,6 +38,47 @@ in `firebaseConfig` is present but unused: Analytics is configured in the
 Firebase project but **not initialized in this codebase**, so it does not
 run.
 
+## Who message content is sent to (added 2026-08-13, a pre-existing gap)
+
+Every message — guest or signed-in — is sent to a third-party AI provider
+to generate the reply, before anything reaches Firestore. This section
+should have existed since Groq was the only provider; it's added now
+because two more were added (Gemini, OpenRouter) and writing this down
+finally forced the gap to be noticed.
+
+`api/chat.js`'s `providerForModel()` picks the provider from the model the
+user selected (Settings > model picker):
+- **Groq** (`api.groq.com`) — the default provider, and the only one an
+  image attachment ever uses regardless of which text model is selected.
+- **Google's Gemini API** (`generativelanguage.googleapis.com`) — used
+  when a `gemini-*` model is picked. Google's own terms for unpaid Gemini
+  API usage state that content submitted may be used by Google "to
+  provide, improve, and develop Google products" — meaning a message sent
+  to a Gemini model here is not necessarily used only to generate that
+  reply. This does not apply to Groq or OpenRouter requests.
+- **OpenRouter** (`openrouter.ai`) — used when a model ending in `:free`
+  is picked. OpenRouter itself forwards the request to the underlying
+  model's own infrastructure (NVIDIA, Poolside, Cohere, Liquid AI, or
+  Google, depending on which of the 14 offered models is selected) — an
+  additional sub-processor hop this document cannot fully characterize
+  without OpenRouter's own sub-processor list.
+
+Whichever provider is used receives the message text sent in that turn
+(and prior turns in the same conversation, since the backend forwards
+conversation history for context), any file attachment, and — if the user
+has memories or MCP connectors configured — that content too, since it's
+injected into the system prompt. None of this is stored by VUXIO-AI's own
+backend beyond the single request (see "Retention" below for what
+Firestore keeps for signed-in users specifically).
+
+**Bring-your-own-key (Settings > Advanced, Groq only today):** a user
+can supply their own Groq API key instead of the shared one. It is sent
+with that request's `Authorization` header and nothing else — never
+written to Firestore, never logged, and not persisted client-side beyond
+the current browser session (a page reload clears it). Gemini and
+OpenRouter requests always use the deployment's own shared key; there is
+no bring-your-own-key path for those two yet.
+
 ## Legal basis — open question
 
 Two candidates, not resolved here:
@@ -93,6 +134,14 @@ session.
 
 ## Requires human/legal review
 
+- **Provider terms of service — added 2026-08-13, unresolved.** See
+  COMPLIANCE.md's matching entry: OpenRouter's and Google's Gemini API
+  terms both raised real questions (reselling-API-access language;
+  free-tier content use for Google product improvement) about whether
+  this multi-user proxy architecture is permitted under their terms as
+  written, for any provider including Groq. International-transfer
+  question below also now applies to whichever of Groq/Google/OpenRouter's
+  sub-processors handles a given request, not only to Firestore.
 - **Legal basis.** Pick one of Art. 6(1)(a)/(b) above (or document that
   both apply, to which data) — not decided by this audit.
 - **Retention policy.** Decide an actual retention period (or an explicit
