@@ -70,5 +70,10 @@ desktop.ini
 *.local
 tsconfig.tsbuildinfo
 
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
+!.env.example
 # Local assistant settings
 .claude/
